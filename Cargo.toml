@@ -1,0 +1,13 @@
+[package]
+name = "volume_tray_icon"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+gtk = "0.16.0"
+gtk-sys = "0.16.0"
+gdk-sys = "0.16.0"
+# libappindicator = "0.8.0"
+gobject-sys = "0.17.0"
