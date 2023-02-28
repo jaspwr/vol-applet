@@ -143,9 +143,6 @@ extern "C" fn status_icon_callback() {
     }
 }
 
-// This function and several of the other weird C binding 
-// things are from `https://github.com/DavidVentura/webextension-adblocker/blob/master/wk-we-adblock/src/lib.rs`.
-// Literally saved my life 🙏
 unsafe fn g_signal_connect(
     instance: gpointer,
     detailed_signal: *const i8,
