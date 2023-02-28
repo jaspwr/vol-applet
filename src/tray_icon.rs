@@ -10,7 +10,6 @@ use gtk_sys::{GtkOrientation, gtk_status_icon_new_from_pixbuf, gtk_status_icon_s
 
 use crate::{exception::Exception, popout::{Popout, self}, popout_glob};
 
-
 pub struct TrayIcon {
     icon_ptr: *mut GtkStatusIcon,
     area: GdkRectangle,
@@ -20,9 +19,9 @@ pub struct TrayIcon {
 
 impl TrayIcon {
     fn fetch_icon(icon_name: &str) -> Option<Pixbuf> {
-        let them = gtk::IconTheme::default()?;
+        let theme = gtk::IconTheme::default()?;
         let flags = IconLookupFlags::empty();
-        let icon = them.lookup_icon(icon_name, 16, flags)?;
+        let icon = theme.lookup_icon(icon_name, 16, flags)?;
         match icon.load_icon() {
             Ok(icon_pix) => Some(icon_pix),
             Err(_) => None
@@ -30,7 +29,6 @@ impl TrayIcon {
     }
 
     pub fn create_icon(&mut self, tooltip: &str) {
-
         let icon_pix = Self::fetch_icon(self.level.to_icon()).unwrap();
 
         unsafe {
@@ -84,7 +82,6 @@ impl TrayIcon {
         (self.area, self.orientation)
     }
 
-
     pub fn new() -> Self {
         let mut tray_icon = Self {
             icon_ptr: std::ptr::null_mut(),
@@ -101,7 +98,6 @@ impl TrayIcon {
         tray_icon
     }
 }
-
 
 #[derive(PartialEq)]
 enum VolumeLevel {
@@ -145,7 +141,6 @@ extern "C" fn status_icon_callback() {
         let popout_ref = popout_glob.as_mut().unwrap();
         Popout::toggle_vis(popout_ref);
     }
-
 }
 
 // This function and several of the other weird C binding 
