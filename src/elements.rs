@@ -15,7 +15,7 @@ pub struct VolumeSlider {
 }
 
 impl VolumeSlider {
-    pub fn new(container: &gtk::Box, label: Option<String>, on_change: Rc<dyn Fn(f64) -> () + 'static>) -> VolumeSlider {
+    pub fn new(container: &gtk::Box, label: Option<String>, start_value: f64, on_change: Rc<dyn Fn(f64) -> () + 'static>) -> VolumeSlider {
         if let Some(label_text) = &label {
             let label = gtk::Label::builder()
                 .label(&label_text.to_owned())
@@ -28,7 +28,9 @@ impl VolumeSlider {
         let bar = gtk::ProgressBar::new();
         bar.set_fraction(0.);
 
+
         let slider = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
+        slider.set_value(start_value);
         slider.connect_change_value(move |_, _, d: f64| -> glib::signal::Inhibit {
             on_change(d);
             gtk::Inhibit(false)

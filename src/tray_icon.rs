@@ -1,16 +1,16 @@
-use std::{mem, ffi::c_void};
+use std::{mem, ffi::c_void, sync::{Mutex, Arc}};
 
 use gdk_sys::GdkRectangle;
 use gobject_sys::{g_signal_connect_data, GCallback, GObject};
 use gtk::{gdk_pixbuf::Pixbuf, IconLookupFlags,
     traits::{IconThemeExt, WidgetExt, GtkWindowExt},
-    glib::{translate::ToGlibPtr, ffi::gpointer}};
-use gtk_sys::{GtkOrientation, gtk_status_icon_new_from_pixbuf, gtk_status_icon_set_tooltip_markup, 
-    gtk_status_icon_set_visible, gtk_status_icon_get_geometry, GtkStatusIcon, gtk_status_icon_set_from_pixbuf};
+    glib::{translate::ToGlibPtr, ffi::gpointer}, gdk::keys::constants::p};
+use gtk_sys::*;
 
-use crate::{exception::Exception, popout::{Popout, self}, popout_glob};
+use crate::{exception::Exception, popout::{Popout, self}, TRAY_ICON};
 
 pub struct TrayIcon {
+    pub popout: Arc<Mutex<Popout>>,
     icon_ptr: *mut GtkStatusIcon,
     area: GdkRectangle,
     orientation: GtkOrientation,
@@ -36,6 +36,7 @@ impl TrayIcon {
             gtk_status_icon_set_tooltip_markup(self.icon_ptr, tooltip.to_glib_none().0);
             gtk_status_icon_set_visible(self.icon_ptr, 1);
             
+
             g_signal_connect(
                 self.icon_ptr as *mut c_void, 
                 "activate".to_glib_none().0, 
@@ -82,8 +83,15 @@ impl TrayIcon {
         (self.area, self.orientation)
     }
 
-    pub fn new() -> Self {
+    pub fn align_popout(&mut self) {
+        let (area, ori) = self.get_geometry();
+        let mut popout = self.popout.lock().unwrap();
+        popout.set_geomerty(area, ori);
+    }
+
+    pub fn new(popout: Arc<Mutex<Popout>>) -> Self {
         let mut tray_icon = Self {
+            popout,
             icon_ptr: std::ptr::null_mut(),
             area: GdkRectangle {
                 x: 0,
@@ -136,10 +144,12 @@ impl VolumeLevel {
 }
 
 #[no_mangle]
-extern "C" fn status_icon_callback() {
+extern "C" fn status_icon_callback(_: gpointer, _: gpointer) {
     unsafe {
-        let popout_ref = popout_glob.as_mut().unwrap();
-        Popout::toggle_vis(popout_ref);
+        let a =TRAY_ICON.as_mut().unwrap();
+        let mut tray_icon = a.lock().unwrap();
+        tray_icon.align_popout();
+        tray_icon.popout.lock().unwrap().toggle_vis();
     }
 }
 

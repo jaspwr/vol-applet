@@ -1,4 +1,6 @@
 
+use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use audio::Audio;
@@ -16,10 +18,7 @@ mod audio;
 use gtk::prelude::*;
 use popout::Popout;
 
-
-static mut popout_glob: Option<Popout> = None;
-
-
+static mut TRAY_ICON: Option<Arc<Mutex<tray_icon::TrayIcon>>> = None;
 fn main() {
     if gtk::init().is_err() {
         // TODO
@@ -27,29 +26,21 @@ fn main() {
         return;
     }
 
-    let mut audio = get_audio();
-    let outputs = audio.get_outputs();
-    std::thread::sleep(Duration::from_secs(1));
-    println!("Found {} outputs", outputs.len());
-
     let app = Application::builder()
         .application_id("org.example.HelloWorld")
         .build();
 
 
     app.connect_activate(move |app| {
-
+        let mut popout: Arc<Mutex<Popout>> = Arc::new(
+            Mutex::new(
+                Popout::new(&app)
+            )
+        );
+        let mut icon = tray_icon::TrayIcon::new(popout);
         unsafe {
-            let button = Button::with_label("Click me!");
-            button.connect_clicked(|_| {
-                eprintln!("Clicked!");
-            });
-
-
-            let mut icon = tray_icon::TrayIcon::new();
-            popout_glob = Some(Popout::new(&app, &mut icon));
+            TRAY_ICON = Some(Arc::new(Mutex::new(icon)));
         }
-
     });
 
     app.run();
