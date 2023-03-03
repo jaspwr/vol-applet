@@ -13,16 +13,16 @@ static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> = Lazy::new(||
 pub struct Pulse {
     context: *mut pa_context, // TODO make option
     mainloop: *mut pa_threaded_mainloop,
-    sinks: Vec<Sink>,
+    // sinks: Vec<Sink>,
 }
 
-struct Sink {
-    context: *mut pa_context,
-    sink_info: *mut pa_sink_info,
-    volume: pa_cvolume,
-    name: String,
-    description: String,
-}
+// struct Sink {
+//     context: *mut pa_context,
+//     sink_info: *mut pa_sink_info,
+//     volume: pa_cvolume,
+//     name: String,
+//     description: String,
+// }
 
 impl Pulse {
     pub fn new() -> Pulse {
@@ -46,7 +46,6 @@ impl Pulse {
         Pulse {
             context,
             mainloop,
-            sinks: Vec::new(),
         }
     }
 }
@@ -101,7 +100,7 @@ impl Audio for Pulse {
 }
 
 #[no_mangle]
-extern "C" fn sink_info_callback(context: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, userdata: *mut c_void) {
+extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, userdata: *mut c_void) {
 
     
     if eol == 0 {
@@ -123,10 +122,10 @@ extern "C" fn sink_info_callback(context: *mut pa_context, sink_info: *const pa_
         }
         
         shared_output_list::add_output(
-            d.clone(),
+            d,
             vol,
             false,
-            n.clone(),
+            n,
         );
 
         // Sink {
@@ -151,7 +150,7 @@ extern "C" fn sink_info_callback(context: *mut pa_context, sink_info: *const pa_
 // }
 
 #[no_mangle]
-pub extern "C" fn context_state_callback(context: *mut pa_context, userdata: *mut c_void) {
+pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_void) {
     unsafe {
         let state = pa_context_get_state(context);
         if state == PA_CONTEXT_READY {

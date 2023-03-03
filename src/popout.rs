@@ -14,7 +14,8 @@ pub struct Popout {
     pub container: gtk::Box,
     pub win: ApplicationWindow,
     visible: bool,
-    audio: Rc<dyn Audio>
+    audio: Rc<dyn Audio>,
+    geometry_last: Option<(GdkRectangle, i32)>
 }
 
 impl Popout {
@@ -47,15 +48,40 @@ impl Popout {
             container,
             win,
             visible: false,
-            audio
+            audio,
+            geometry_last: None
         };
+
 
         ret.add_hide_on_loose_focus();
         ret
     }
 
     pub fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
-        self.win.move_(area.x, area.y - 200);
+        let (width, height) = self.win.size();
+        self.geometry_last = Some((area, ori));
+
+        println!("{} {} {} {} {} {} ori {}", area.x, area.y, area.width, width, height,  area.height, ori);
+
+        let (screen_wid, screen_hei) = (1920, 1080); // TODO
+        let left = (area.x as f32 / screen_wid as f32) > 0.5;
+        let top = (area.y as f32 / screen_hei as f32) > 0.5;
+
+        if top && left {
+            self.win.move_(area.x - width, area.y - height);
+        } else if top && !left {
+            self.win.move_(area.x + area.width, area.y - height);
+        } else if !top && left {
+            self.win.move_(area.x - width, area.y + area.height);
+        } else if !top && !left {
+            self.win.move_(area.x + area.width, area.y + area.height);
+        }
+    }
+
+    pub fn fix_window_position(&mut self) {
+        if self.geometry_last.is_none() { return; }
+        let (area, ori) = self.geometry_last.unwrap();
+        self.set_geomerty(area, ori);
     }
 
     fn add_hide_on_loose_focus(&mut self) {
@@ -66,18 +92,19 @@ impl Popout {
         // });
     }
 
-    pub fn update_outputs(&self, container: &gtk::Box) {
+    pub fn update_outputs(&mut self, container: &gtk::Box) {
 
         self.container.foreach(|w| {
             self.container.remove(w);
         });
 
         let outputs = audio::shared_output_list::get_output_list();
-        println!("h {:?}", outputs.len());
 
         for output in outputs {
             self.append_volume_slider(container, output);
         }
+
+        self.fix_window_position();
     }
 
     pub fn append_volume_slider(&self, 
@@ -89,7 +116,7 @@ impl Popout {
         let aud = self.audio.clone();
         let aud_ = self.audio.clone();
         println!("{} {} {} {}", output.name, output.volume, output.muted, output.output_id);
-        let mut slider = VolumeSlider::new(&container, 
+        let mut slider = VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
             Rc::new(move |vol: f64| {
                 aud.set_volume(id.clone(), vol);

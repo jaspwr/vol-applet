@@ -1,8 +1,8 @@
-use std::{rc::Rc, sync::{Arc, Mutex}};
+use std::rc::Rc;
 
 use gtk::{glib::idle_add_once, traits::WidgetExt};
 
-use crate::{popout::Popout, TRAY_ICON};
+use crate::TRAY_ICON;
 
 mod pulseaudio;
 pub mod shared_output_list;
@@ -26,8 +26,9 @@ pub fn finish_output_list() {
 
         let a = unsafe { TRAY_ICON.as_mut().unwrap() };
         let tray_icon = a.lock().unwrap();
-        let popout = tray_icon.popout.lock().unwrap();
-        popout.update_outputs(&popout.container);
+        let mut popout = tray_icon.popout.lock().unwrap();
+        let container = popout.container.clone();
+        popout.update_outputs(&container);
         popout.win.show_all();
         // glib::Continue(false)
     });

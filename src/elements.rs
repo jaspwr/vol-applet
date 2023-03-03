@@ -2,12 +2,6 @@ use std::rc::Rc;
 
 use gtk::{traits::{ProgressBarExt, ContainerExt, RangeExt, ButtonExt}, prelude::ObjectExt, glib, ProgressBar};
 
-type ReRunTimer = Option<std::time::Duration>;
-
-enum Text {
-    Static(String),
-    Command(String, ReRunTimer),
-}
 
 pub struct VolumeSlider {
     label: Option<String>,
