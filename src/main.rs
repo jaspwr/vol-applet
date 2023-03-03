@@ -2,6 +2,9 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
+use audio::Audio;
+use audio::WrappedAudio;
+use audio::get_audio;
 use gtk::Application;
 
 
@@ -12,9 +15,15 @@ mod elements;
 mod audio;
 
 use gtk::prelude::*;
+use once_cell::sync::Lazy;
 use popout::Popout;
+use tray_icon::TrayIcon;
 
-static mut TRAY_ICON: Option<Arc<Mutex<tray_icon::TrayIcon>>> = None;
+
+static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
+static POPOUT: Mutex<Option<Popout>> = Mutex::new(None);
+static AUDIO: Lazy<Mutex<WrappedAudio>> = Lazy::new(|| Mutex::new(get_audio()));
+
 fn main() {
     if gtk::init().is_err() {
         // TODO
@@ -22,21 +31,16 @@ fn main() {
         return;
     }
 
+    AUDIO.lock().unwrap();
+
     let app = Application::builder()
         .application_id("com.github.jaspwr.vol-applet")
         .build();
 
 
     app.connect_activate(move |app| {
-        let popout: Arc<Mutex<Popout>> = Arc::new(
-            Mutex::new(
-                Popout::new(app)
-            )
-        );
-        let icon = tray_icon::TrayIcon::new(popout);
-        unsafe {
-            TRAY_ICON = Some(Arc::new(Mutex::new(icon)));
-        }
+        POPOUT.lock().unwrap().replace(Popout::new(app));
+        TRAY_ICON.lock().unwrap().replace(TrayIcon::new());
     });
 
     app.run();

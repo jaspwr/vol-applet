@@ -45,7 +45,7 @@ impl VolumeSlider {
         });
 
         container.add(&slider);
-        // container.add(&mute_button);
+        container.add(&mute_button);
         // container.add(&bar);
 
         VolumeSlider {

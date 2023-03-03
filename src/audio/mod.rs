@@ -1,27 +1,34 @@
-use std::rc::Rc;
 
-use gtk::{glib::idle_add_once, traits::WidgetExt};
+use std::sync::Arc;
 
-use crate::TRAY_ICON;
+use gtk::glib::idle_add_once;
+
+use crate::POPOUT;
 
 mod pulseaudio;
 pub mod shared_output_list;
 
-pub fn get_audio() -> Rc<dyn Audio> {
+unsafe impl Send for WrappedAudio {}
+unsafe impl Sync for WrappedAudio {}
+pub struct WrappedAudio {
+    pub aud: Arc<dyn Audio>
+}
+
+pub fn get_audio() -> WrappedAudio {
     // TODO: pick audio backend based on config
-    Rc::new(pulseaudio::Pulse::new())
+    WrappedAudio {
+        aud: Arc::new(pulseaudio::Pulse::new())
+    }   
 }
 
 pub fn finish_output_list() {
     idle_add_once(|| {
         println!("Finished output list");
-
-        let a = unsafe { TRAY_ICON.as_mut().unwrap() };
-        let tray_icon = a.lock().unwrap();
-        let mut popout = tray_icon.popout.lock().unwrap();
-        let container = popout.container.clone();
+        let mut a = POPOUT.lock().unwrap();
+        let popout = a.as_mut().unwrap();
+        let container = popout.container.container.clone();
         popout.update_outputs(&container);
-        popout.win.show_all();
+        
         // glib::Continue(false)
     });
 

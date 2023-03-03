@@ -1,21 +1,29 @@
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
 
 use gdk_sys::GdkRectangle;
-use gtk::traits::{GtkWindowExt, WidgetExt, ButtonExt, ContainerExt, ProgressBarExt};
-use gtk::{Application, ApplicationWindow, Inhibit, Container};
+use gtk::traits::{GtkWindowExt, WidgetExt, ContainerExt};
+use gtk::{Application, ApplicationWindow, Inhibit};
 
-use crate::{TRAY_ICON, audio};
-use crate::audio::{Audio, get_audio};
+use crate::{audio, AUDIO, POPOUT};
 use crate::elements::VolumeSlider;
-use crate::tray_icon::TrayIcon;
 
 pub struct Popout {
-    pub container: gtk::Box,
-    pub win: ApplicationWindow,
+    pub container: GtkBoxWrapper,
+    pub win: ApplicationWindowWrapper,
     visible: bool,
-    audio: Rc<dyn Audio>,
     geometry_last: Option<(GdkRectangle, i32)>
+}
+
+unsafe impl Sync for GtkBoxWrapper {}
+unsafe impl Send for GtkBoxWrapper {}
+pub struct GtkBoxWrapper {
+    pub container: gtk::Box
+}
+
+unsafe impl Sync for ApplicationWindowWrapper {}
+unsafe impl Send for ApplicationWindowWrapper {}
+pub struct ApplicationWindowWrapper {
+    pub win: ApplicationWindow
 }
 
 impl Popout {
@@ -42,13 +50,10 @@ impl Popout {
 
         win.set_child(Some(&container));
 
-        let audio = get_audio();
-
         let mut ret = Self {
-            container,
-            win,
+            container: GtkBoxWrapper { container },
+            win: ApplicationWindowWrapper { win },
             visible: false,
-            audio,
             geometry_last: None
         };
 
@@ -58,7 +63,7 @@ impl Popout {
     }
 
     pub fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
-        let (width, height) = self.win.size();
+        let (width, height) = self.win.win.size();
         self.geometry_last = Some((area, ori));
 
         println!("{} {} {} {} {} {} ori {}", area.x, area.y, area.width, width, height,  area.height, ori);
@@ -68,13 +73,13 @@ impl Popout {
         let top = (area.y as f32 / screen_hei as f32) > 0.5;
 
         if top && left {
-            self.win.move_(area.x - width, area.y - height);
+            self.win.win.move_(area.x - width, area.y - height);
         } else if top && !left {
-            self.win.move_(area.x + area.width, area.y - height);
+            self.win.win.move_(area.x + area.width, area.y - height);
         } else if !top && left {
-            self.win.move_(area.x - width, area.y + area.height);
+            self.win.win.move_(area.x - width, area.y + area.height);
         } else if !top && !left {
-            self.win.move_(area.x + area.width, area.y + area.height);
+            self.win.win.move_(area.x + area.width, area.y + area.height);
         }
     }
 
@@ -85,17 +90,16 @@ impl Popout {
     }
 
     fn add_hide_on_loose_focus(&mut self) {
-        // self.win.connect_focus_out_event(|r, f| -> Inhibit {
-        //     self.win.hide();
-        //     self.visible = false;
-        //     gtk::Inhibit(false)
-        // });
+        self.win.win.connect_focus_out_event(|r, f| -> Inhibit {
+            POPOUT.lock().unwrap().as_mut().unwrap().hide();
+            gtk::Inhibit(false)
+        });
     }
 
     pub fn update_outputs(&mut self, container: &gtk::Box) {
 
-        self.container.foreach(|w| {
-            self.container.remove(w);
+        self.container.container.foreach(|w| {
+            self.container.container.remove(w);
         });
 
         let outputs = audio::shared_output_list::get_output_list();
@@ -103,6 +107,9 @@ impl Popout {
         for output in outputs {
             self.append_volume_slider(container, output);
         }
+
+
+        self.win.win.show_all();
 
         self.fix_window_position();
     }
@@ -113,31 +120,34 @@ impl Popout {
 
         let id = output.output_id.clone();
         let id_ = output.output_id.clone();
-        let aud = self.audio.clone();
-        let aud_ = self.audio.clone();
         println!("{} {} {} {}", output.name, output.volume, output.muted, output.output_id);
         let mut slider = VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
             Rc::new(move |vol: f64| {
-                aud.set_volume(id.clone(), vol);
+                AUDIO.lock().unwrap().aud.set_volume(id.clone(), vol);
             }),
             Rc::new(move |mute: bool| {
-                aud_.set_muted(id_.clone(), mute);
+                AUDIO.lock().unwrap().aud.set_muted(id_.clone(), mute);
             })
-    );
+        );
         // slider.set_bar(vol);
         slider
     }
 
     fn hide(&mut self) {
-        self.win.hide();
+        self.win.win.hide();
         self.visible = false;
     }
 
     fn show(&mut self) {
         audio::shared_output_list::clear_output_list();
-        self.audio.get_outputs();
-        self.win.show_all();
+        AUDIO.lock().unwrap().aud.get_outputs();
+        // self.win.win.show_all();
+        // self.win.win.emit_grab_focus();
+        // self.win.win.activate();
+        // self.win.win.activate_focus();
+        // self.win.win.grab_focus();
+        self.fix_window_position();
         self.visible = true;
     }
 

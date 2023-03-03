@@ -7,14 +7,21 @@ use gtk::{gdk_pixbuf::Pixbuf, IconLookupFlags,
     glib::{translate::ToGlibPtr, ffi::gpointer}, gdk::keys::constants::p};
 use gtk_sys::*;
 
-use crate::{exception::Exception, popout::{Popout, self}, TRAY_ICON};
+use crate::{exception::Exception, popout::{Popout, self}, TRAY_ICON, POPOUT};
+
+
 
 pub struct TrayIcon {
-    pub popout: Arc<Mutex<Popout>>,
-    icon_ptr: *mut GtkStatusIcon,
+    icon_ptr: StatusIconPtr,
     area: GdkRectangle,
     orientation: GtkOrientation,
     level: VolumeLevel
+}
+
+unsafe impl Sync for StatusIconPtr {}
+unsafe impl Send for StatusIconPtr {}
+struct StatusIconPtr {
+    ptr: *mut gtk_sys::GtkStatusIcon
 }
 
 impl TrayIcon {
@@ -32,13 +39,13 @@ impl TrayIcon {
         let icon_pix = Self::fetch_icon(self.level.to_icon()).unwrap();
 
         unsafe {
-            self.icon_ptr = gtk_status_icon_new_from_pixbuf(icon_pix.to_glib_none().0);
-            gtk_status_icon_set_tooltip_markup(self.icon_ptr, tooltip.to_glib_none().0);
-            gtk_status_icon_set_visible(self.icon_ptr, 1);
+            self.icon_ptr.ptr = gtk_status_icon_new_from_pixbuf(icon_pix.to_glib_none().0);
+            gtk_status_icon_set_tooltip_markup(self.icon_ptr.ptr, tooltip.to_glib_none().0);
+            gtk_status_icon_set_visible(self.icon_ptr.ptr, 1);
             
 
             g_signal_connect(
-                self.icon_ptr as *mut c_void, 
+                self.icon_ptr.ptr as *mut c_void, 
                 "activate".to_glib_none().0, 
                 Some(mem::transmute(status_icon_callback as *const ())),
                 std::ptr::null_mut()
@@ -61,7 +68,7 @@ impl TrayIcon {
 
     fn set_icon(&self, icon_pixbuf: Pixbuf) {
         unsafe {
-            gtk_status_icon_set_from_pixbuf(self.icon_ptr, icon_pixbuf.to_glib_none().0);
+            gtk_status_icon_set_from_pixbuf(self.icon_ptr.ptr, icon_pixbuf.to_glib_none().0);
         }
     }
 
@@ -70,7 +77,7 @@ impl TrayIcon {
         let orient_ptr: *mut GtkOrientation = &mut self.orientation;
         unsafe {
             gtk_status_icon_get_geometry(
-                self.icon_ptr,
+                self.icon_ptr.ptr,
                 std::ptr::null_mut(),
                 area_ptr,
                 orient_ptr,
@@ -85,14 +92,13 @@ impl TrayIcon {
 
     pub fn align_popout(&mut self) {
         let (area, ori) = self.get_geometry();
-        let mut popout = self.popout.lock().unwrap();
-        popout.set_geomerty(area, ori);
+        POPOUT.lock().unwrap().as_mut().unwrap().set_geomerty(area, ori);
     }
 
-    pub fn new(popout: Arc<Mutex<Popout>>) -> Self {
+    pub fn new() -> Self {
+        println!("fuck you");
         let mut tray_icon = Self {
-            popout,
-            icon_ptr: std::ptr::null_mut(),
+            icon_ptr: StatusIconPtr { ptr: std::ptr::null_mut() },
             area: GdkRectangle {
                 x: 0,
                 y: 0,
@@ -145,12 +151,8 @@ impl VolumeLevel {
 
 #[no_mangle]
 extern "C" fn status_icon_callback(_: gpointer, _: gpointer) {
-    unsafe {
-        let a =TRAY_ICON.as_mut().unwrap();
-        let mut tray_icon = a.lock().unwrap();
-        tray_icon.align_popout();
-        tray_icon.popout.lock().unwrap().toggle_vis();
-    }
+    TRAY_ICON.lock().unwrap().as_mut().unwrap().align_popout();
+    POPOUT.lock().unwrap().as_mut().unwrap().toggle_vis();
 }
 
 unsafe fn g_signal_connect(
