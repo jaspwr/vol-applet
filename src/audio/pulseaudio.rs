@@ -1,6 +1,6 @@
-use std::{rc::Rc, ffi::c_void, sync::{Mutex, Arc}, iter::Map, collections::HashMap};
+use std::{ffi::c_void, sync::Mutex, collections::HashMap};
 
-use crate::{audio::{finish_output_list, shared_output_list}, popout::Popout};
+use crate::audio::{finish_output_list, shared_output_list};
 
 
 use super::Audio;
@@ -13,16 +13,7 @@ static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> = Lazy::new(||
 pub struct Pulse {
     context: *mut pa_context, // TODO make option
     mainloop: *mut pa_threaded_mainloop,
-    // sinks: Vec<Sink>,
 }
-
-// struct Sink {
-//     context: *mut pa_context,
-//     sink_info: *mut pa_sink_info,
-//     volume: pa_cvolume,
-//     name: String,
-//     description: String,
-// }
 
 impl Pulse {
     pub fn new() -> Pulse {
@@ -52,8 +43,6 @@ impl Pulse {
 
 impl Audio for Pulse {
     fn get_outputs(&self) {
-        // let mut sinks: Vec<Rc<dyn super::AudioOutput>> = Vec::new();
-        //TEMP_SINK_LIST_MUTEX.lock().unwrap().clear();
         unsafe {
             pa_context_get_sink_info_list(self.context, Some(sink_info_callback), std::ptr::null_mut());
         }
@@ -100,11 +89,8 @@ impl Audio for Pulse {
 }
 
 #[no_mangle]
-extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, userdata: *mut c_void) {
-
-    
+extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, _: *mut c_void) {
     if eol == 0 {
-        println!("FOUND SINK");
         let sink_info_ptr = sink_info as *mut pa_sink_info;
         let mut n = String::new();
         let mut d = String::new();
@@ -113,9 +99,11 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
             let name_ptr = (*sink_info_ptr).name;
             let name = std::ffi::CStr::from_ptr(name_ptr);
             n = name.to_string_lossy().to_string();
+
             let desc_ptr = (*sink_info_ptr).description;
             let desc = std::ffi::CStr::from_ptr(desc_ptr);
             d = desc.to_string_lossy().to_string();
+            
             let v = (*sink_info_ptr).volume;
             PA_CVOLUMES.lock().unwrap().insert(n.clone(), Box::new(v));
             vol = pa_cvolume_avg(&v) as f64 / 1000.;
@@ -127,27 +115,11 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
             false,
             n,
         );
-
-        // Sink {
-        //     context,
-        //     sink_info: sink_info_ptr,
-        //     name: n,
-        //     description: d,
-        //     volume: unsafe {  },
-        // };
     } else {
+        // End of input
         finish_output_list();
-        // println!("{:?}", TEMP_SINK_LIST_MUTEX.lock().unwrap());
-        println!("END OF SINKS");
     }
 }
-
-
-
-// #[no_mangle]
-// pub extern "C" fn nothing_callback(context: *mut pa_context, success: i32, userdata: *mut c_void) {
-//     println!("nothing callback");
-// }
 
 #[no_mangle]
 pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_void) {

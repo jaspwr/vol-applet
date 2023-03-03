@@ -1,12 +1,8 @@
 
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Duration;
 
-use audio::Audio;
-use audio::get_audio;
 use gtk::Application;
-use gtk::Button;
 
 
 mod tray_icon;
@@ -32,12 +28,12 @@ fn main() {
 
 
     app.connect_activate(move |app| {
-        let mut popout: Arc<Mutex<Popout>> = Arc::new(
+        let popout: Arc<Mutex<Popout>> = Arc::new(
             Mutex::new(
-                Popout::new(&app)
+                Popout::new(app)
             )
         );
-        let mut icon = tray_icon::TrayIcon::new(popout);
+        let icon = tray_icon::TrayIcon::new(popout);
         unsafe {
             TRAY_ICON = Some(Arc::new(Mutex::new(icon)));
         }

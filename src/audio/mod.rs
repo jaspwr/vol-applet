@@ -12,14 +12,6 @@ pub fn get_audio() -> Rc<dyn Audio> {
     Rc::new(pulseaudio::Pulse::new())
 }
 
-// pub fn new_output(output: Rc<dyn AudioOutput>) {
-//     println!("New output: {}", output.get_name());
-
-//     let a = unsafe { TRAY_ICON.as_mut().unwrap() };
-//     let tray_icon = a.lock().unwrap();
-//     tray_icon.popout.lock().unwrap().outputs.push(output);
-// }
-
 pub fn finish_output_list() {
     idle_add_once(|| {
         println!("Finished output list");

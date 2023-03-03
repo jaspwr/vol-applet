@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use gtk::{traits::{ProgressBarExt, ContainerExt, RangeExt, ButtonExt}, prelude::ObjectExt, glib, ProgressBar};
+use gtk::{traits::{ProgressBarExt, ContainerExt, RangeExt, ButtonExt}, glib, ProgressBar};
 
 
 pub struct VolumeSlider {
@@ -10,8 +10,8 @@ pub struct VolumeSlider {
 
 impl VolumeSlider {
     pub fn new(container: &gtk::Box, label: Option<String>, start_value: f64, muted: bool, 
-        on_change_vol: Rc<dyn Fn(f64) -> () + 'static>,
-        on_change_mute: Rc<dyn Fn(bool) -> () + 'static>) -> VolumeSlider {
+        on_change_vol: Rc<dyn Fn(f64) + 'static>,
+        on_change_mute: Rc<dyn Fn(bool) + 'static>) -> VolumeSlider {
 
         if let Some(label_text) = &label {
             let label = gtk::Label::builder()
