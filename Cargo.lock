@@ -725,6 +725,7 @@ dependencies = [
  "gtk",
  "gtk-sys",
  "libpulse-sys",
+ "once_cell",
 ]
 
 [[package]]

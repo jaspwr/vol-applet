@@ -27,7 +27,7 @@ fn main() {
     }
 
     let app = Application::builder()
-        .application_id("org.example.HelloWorld")
+        .application_id("com.github.jaspwr.vol-applet")
         .build();
 
 

@@ -5,16 +5,16 @@ use gdk_sys::GdkRectangle;
 use gtk::traits::{GtkWindowExt, WidgetExt, ButtonExt, ContainerExt, ProgressBarExt};
 use gtk::{Application, ApplicationWindow, Inhibit, Container};
 
-use crate::audio::{AudioOutput, Audio, get_audio};
+use crate::{TRAY_ICON, audio};
+use crate::audio::{Audio, get_audio};
 use crate::elements::VolumeSlider;
 use crate::tray_icon::TrayIcon;
 
 pub struct Popout {
     pub container: gtk::Box,
-    pub outputs: Vec<Rc<dyn AudioOutput>>,
-    win: ApplicationWindow,
+    pub win: ApplicationWindow,
     visible: bool,
-    audio: Box<dyn Audio>
+    audio: Rc<dyn Audio>
 }
 
 impl Popout {
@@ -22,7 +22,7 @@ impl Popout {
         let win = ApplicationWindow::builder()
                 .application(app)
                 .default_width(320)
-                .default_height(200)
+                .default_height(50)
                 .title("Volume")
                 .build();
 
@@ -45,7 +45,6 @@ impl Popout {
 
         let mut ret = Self {
             container,
-            outputs: Vec::new(),
             win,
             visible: false,
             audio
@@ -67,26 +66,38 @@ impl Popout {
         // });
     }
 
+    pub fn update_outputs(&self, container: &gtk::Box) {
 
-
-    pub fn append_volume_slider_list(&self, container: &gtk::Box) {
-        println!("h {:?}", self.outputs.len());
         self.container.foreach(|w| {
             self.container.remove(w);
         });
-        for output in &self.outputs {
-            println!("fuck you {:?}", output.get_name());
-            self.append_volume_slider(container, output.clone());
+
+        let outputs = audio::shared_output_list::get_output_list();
+        println!("h {:?}", outputs.len());
+
+        for output in outputs {
+            self.append_volume_slider(container, output);
         }
     }
 
-    pub fn append_volume_slider(&self, container: &gtk::Box, audio_output: Rc<dyn AudioOutput>) -> VolumeSlider {
-        let label = audio_output.get_name();
-        let vol = audio_output.get_volume();
-        let mut slider = VolumeSlider::new(&container, Some(label), vol,
-        Rc::new(move |d: f64| {
-            audio_output.set_volume(d);
-        }));
+    pub fn append_volume_slider(&self, 
+        container: &gtk::Box,
+        output: audio::shared_output_list::Output) -> VolumeSlider {
+
+        let id = output.output_id.clone();
+        let id_ = output.output_id.clone();
+        let aud = self.audio.clone();
+        let aud_ = self.audio.clone();
+        println!("{} {} {} {}", output.name, output.volume, output.muted, output.output_id);
+        let mut slider = VolumeSlider::new(&container, 
+            Some(output.name), output.volume, output.muted,
+            Rc::new(move |vol: f64| {
+                aud.set_volume(id.clone(), vol);
+            }),
+            Rc::new(move |mute: bool| {
+                aud_.set_muted(id_.clone(), mute);
+            })
+    );
         // slider.set_bar(vol);
         slider
     }
@@ -97,20 +108,17 @@ impl Popout {
     }
 
     fn show(&mut self) {
+        audio::shared_output_list::clear_output_list();
+        self.audio.get_outputs();
         self.win.show_all();
         self.visible = true;
     }
 
     pub fn toggle_vis(&mut self) {
-        self.visible = !self.visible;
         if self.visible {
-            self.outputs.clear();
-            self.audio.get_outputs();
-            self.win.show_all();
+            self.hide();
         } else {
-            self.append_volume_slider_list(&self.container);
-
-//            self.win.hide();
+            self.show();
         }
     }
 
