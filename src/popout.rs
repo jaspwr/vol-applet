@@ -66,7 +66,6 @@ impl Popout {
         let (width, height) = self.win.win.size();
         self.geometry_last = Some((area, ori));
 
-        println!("{} {} {} {} {} {} ori {}", area.x, area.y, area.width, width, height,  area.height, ori);
 
         let (screen_wid, screen_hei) = (1920, 1080); // TODO
         let left = (area.x as f32 / screen_wid as f32) > 0.5;
@@ -120,7 +119,6 @@ impl Popout {
 
         let id = output.output_id.clone();
         let id_ = output.output_id.clone();
-        println!("{} {} {} {}", output.name, output.volume, output.muted, output.output_id);
         let mut slider = VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
             Rc::new(move |vol: f64| {
