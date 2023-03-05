@@ -1,8 +1,6 @@
 
-use std::sync::Arc;
 use std::sync::Mutex;
 
-use audio::Audio;
 use audio::WrappedAudio;
 use audio::get_audio;
 use gtk::Application;
@@ -31,7 +29,7 @@ fn main() {
         return;
     }
 
-    AUDIO.lock().unwrap();
+    let _a = AUDIO.lock().unwrap();
 
     let app = Application::builder()
         .application_id("com.github.jaspwr.vol-applet")

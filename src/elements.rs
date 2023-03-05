@@ -43,7 +43,7 @@ impl VolumeSlider {
             on_change_mute();
         });
 
-        let mut grid: gtk::Grid = gtk::Grid::new();
+        let grid: gtk::Grid = gtk::Grid::new();
         grid.set_column_spacing(10);
         grid.attach(&volume_slider, 0, 0, 30, 3);
         grid.attach_next_to(&mute_button, Some(&volume_slider), gtk::PositionType::Right, 3, 3);

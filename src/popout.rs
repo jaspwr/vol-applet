@@ -6,9 +6,9 @@ use gtk::glib::idle_add_once;
 use gtk::traits::{GtkWindowExt, WidgetExt, ContainerExt};
 use gtk::{Application, ApplicationWindow, Inhibit};
 
-use crate::audio::shared_output_list::{self, Output, is_default_output};
+use crate::audio::shared_output_list::{self, is_default_output};
 use crate::tray_icon::TrayIcon;
-use crate::{audio, AUDIO, POPOUT, TRAY_ICON};
+use crate::{audio, AUDIO, POPOUT};
 use crate::elements::VolumeSlider;
 
 pub struct Popout {
@@ -95,7 +95,7 @@ impl Popout {
     }
 
     fn add_hide_on_loose_focus(&mut self) {
-        self.win.win.connect_focus_out_event(|r, f| -> Inhibit {
+        self.win.win.connect_focus_out_event(|_, _| -> Inhibit {
             POPOUT.lock().unwrap().as_mut().unwrap().hide();
             gtk::Inhibit(false)
         });
@@ -155,7 +155,7 @@ impl Popout {
 
         let id = output.output_id.clone();
         let id_ = output.output_id.clone();
-        let slider = VolumeSlider::new(container, 
+        VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
             Rc::new(move |vol: f32| {
                 if is_default {
@@ -176,8 +176,7 @@ impl Popout {
                 Popout::set_specific_muted(id_.clone(), muted);
                 AUDIO.lock().unwrap().aud.set_muted(id_.clone(), muted);
             })
-        );
-        slider
+        )
     }
 
     fn hide(&mut self) {

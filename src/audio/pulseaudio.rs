@@ -92,25 +92,28 @@ impl Audio for Pulse {
 extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, _: *mut c_void) {
     if eol == 0 {
         let sink_info_ptr = sink_info as *mut pa_sink_info;
-        let mut n = String::new();
-        let mut d = String::new();
-        let mut muted = false;
-        let mut vol: f32 = 0.;
-        unsafe {
+        
+        let n = unsafe {
             let name_ptr = (*sink_info_ptr).name;
             let name = std::ffi::CStr::from_ptr(name_ptr);
-            n = name.to_string_lossy().to_string();
+            name.to_string_lossy().to_string()
+        };
 
+        let d = unsafe {
             let desc_ptr = (*sink_info_ptr).description;
             let desc = std::ffi::CStr::from_ptr(desc_ptr);
-            d = desc.to_string_lossy().to_string();
-            
+            desc.to_string_lossy().to_string()
+        };
+
+        let muted = unsafe {
+            (*sink_info_ptr).mute != 0
+        };
+
+        let vol: f32 = unsafe {
             let v = (*sink_info_ptr).volume;
             PA_CVOLUMES.lock().unwrap().insert(n.clone(), Box::new(v));
-            vol = pa_cvolume_avg(&v) as f32 / 1000.;
-
-            muted = (*sink_info_ptr).mute != 0;
-        }
+            pa_cvolume_avg(&v) as f32 / 1000.
+        };
         
         shared_output_list::add_output(
             d,

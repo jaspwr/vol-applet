@@ -1,9 +1,8 @@
 
 use std::sync::Arc;
 
-use gtk::glib::idle_add_once;
 
-use crate::{POPOUT, popout::Popout};
+use crate::{popout::Popout};
 
 mod pulseaudio;
 pub mod shared_output_list;

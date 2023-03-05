@@ -1,13 +1,13 @@
-use std::{mem, ffi::c_void, sync::{Mutex, Arc}};
+use std::{mem, ffi::c_void};
 
 use gdk_sys::GdkRectangle;
 use gobject_sys::{g_signal_connect_data, GCallback, GObject};
 use gtk::{gdk_pixbuf::Pixbuf, IconLookupFlags,
-    traits::{IconThemeExt, WidgetExt, GtkWindowExt},
-    glib::{translate::ToGlibPtr, ffi::gpointer, idle_add_once}, gdk::keys::constants::p};
+    traits::IconThemeExt,
+    glib::{translate::ToGlibPtr, ffi::gpointer, idle_add_once}};
 use gtk_sys::*;
 
-use crate::{exception::Exception, popout::{Popout, self}, TRAY_ICON, POPOUT};
+use crate::{exception::Exception, TRAY_ICON, POPOUT};
 
 
 
