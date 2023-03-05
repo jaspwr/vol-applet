@@ -1,6 +1,6 @@
 use std::{ffi::c_void, sync::Mutex, collections::HashMap};
 
-use crate::audio::{finish_output_list, shared_output_list};
+use crate::{audio::{finish_output_list, shared_output_list}, AUDIO};
 
 
 use super::Audio;
@@ -48,7 +48,7 @@ impl Audio for Pulse {
         }
     }
 
-    fn set_volume(&self, sink_id: String, volume: f64) {
+    fn set_volume(&self, sink_id: String, volume: f32) {
         unsafe {
             // let cvol_ptr = &self.volume as *const pa_cvolume as *mut pa_cvolume; // LOL fuck off rust
             let cvol = **PA_CVOLUMES.lock().unwrap().get(&sink_id).unwrap();
@@ -94,7 +94,8 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
         let sink_info_ptr = sink_info as *mut pa_sink_info;
         let mut n = String::new();
         let mut d = String::new();
-        let mut vol: f64 = 0.;
+        let mut muted = false;
+        let mut vol: f32 = 0.;
         unsafe {
             let name_ptr = (*sink_info_ptr).name;
             let name = std::ffi::CStr::from_ptr(name_ptr);
@@ -106,13 +107,15 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
             
             let v = (*sink_info_ptr).volume;
             PA_CVOLUMES.lock().unwrap().insert(n.clone(), Box::new(v));
-            vol = pa_cvolume_avg(&v) as f64 / 1000.;
+            vol = pa_cvolume_avg(&v) as f32 / 1000.;
+
+            muted = (*sink_info_ptr).mute != 0;
         }
         
         shared_output_list::add_output(
             d,
             vol,
-            false,
+            muted,
             n,
         );
     } else {
@@ -127,6 +130,7 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
         let state = pa_context_get_state(context);
         if state == PA_CONTEXT_READY {
             println!("PulseAudio context ready");
+            AUDIO.lock().unwrap().aud.get_outputs();
             // pa_threaded_mainloop_signal(mainloop, 0);
         }
     }

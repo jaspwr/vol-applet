@@ -37,7 +37,6 @@ fn main() {
         .application_id("com.github.jaspwr.vol-applet")
         .build();
 
-
     app.connect_activate(move |app| {
         POPOUT.lock().unwrap().replace(Popout::new(app));
         TRAY_ICON.lock().unwrap().replace(TrayIcon::new());

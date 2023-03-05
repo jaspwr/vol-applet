@@ -4,7 +4,7 @@ use gdk_sys::GdkRectangle;
 use gobject_sys::{g_signal_connect_data, GCallback, GObject};
 use gtk::{gdk_pixbuf::Pixbuf, IconLookupFlags,
     traits::{IconThemeExt, WidgetExt, GtkWindowExt},
-    glib::{translate::ToGlibPtr, ffi::gpointer}, gdk::keys::constants::p};
+    glib::{translate::ToGlibPtr, ffi::gpointer, idle_add_once}, gdk::keys::constants::p};
 use gtk_sys::*;
 
 use crate::{exception::Exception, popout::{Popout, self}, TRAY_ICON, POPOUT};
@@ -53,7 +53,15 @@ impl TrayIcon {
         }
     }
 
-    pub fn set_volume_icon_level(&mut self, volume: f32) -> Result<(), Exception> {
+    pub fn set_volume (volume: f32) {
+        idle_add_once(move || {
+            let mut tray_icon = TRAY_ICON.lock().unwrap();
+            let tray_icon = tray_icon.as_mut().unwrap();
+            tray_icon.set_volume_icon_level(volume);
+        });
+    }
+
+    fn set_volume_icon_level(&mut self, volume: f32) -> Result<(), Exception> {
         let new_lvl = VolumeLevel::from_volume(volume);
         if self.level == new_lvl { return Ok(()) };
         self.level = new_lvl;
@@ -96,7 +104,6 @@ impl TrayIcon {
     }
 
     pub fn new() -> Self {
-        println!("fuck you");
         let mut tray_icon = Self {
             icon_ptr: StatusIconPtr { ptr: std::ptr::null_mut() },
             area: GdkRectangle {
@@ -123,9 +130,9 @@ enum VolumeLevel {
 
 impl VolumeLevel {
     fn from_volume(volume: f32) -> VolumeLevel {
-        if volume > 0.66 {
+        if volume > 66. {
             VolumeLevel::High
-        } else if volume > 0.33 {
+        } else if volume > 33. {
             VolumeLevel::Medium
         } else if volume > 0.0 {
             VolumeLevel::Low
@@ -138,7 +145,7 @@ impl VolumeLevel {
         const VOLUME_HIGH: &str = "audio-volume-high-symbolic";
         const VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
         const VOLUME_LOW: &str = "audio-volume-low-symbolic";
-        const VOLUME_MUTED: &str = "audio-volume-muted-symbolic";
+        const VOLUME_MUTED: &str = "audio-volume-muted-symbolic"; 
 
         match self {
             VolumeLevel::High => VOLUME_HIGH,

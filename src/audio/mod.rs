@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use gtk::glib::idle_add_once;
 
-use crate::POPOUT;
+use crate::{POPOUT, popout::Popout};
 
 mod pulseaudio;
 pub mod shared_output_list;
@@ -22,22 +22,12 @@ pub fn get_audio() -> WrappedAudio {
 }
 
 pub fn finish_output_list() {
-    idle_add_once(|| {
-        println!("Finished output list");
-        let mut a = POPOUT.lock().unwrap();
-        let popout = a.as_mut().unwrap();
-        let container = popout.container.container.clone();
-        popout.update_outputs(&container);
-        
-        // glib::Continue(false)
-    });
-
-    // TODO
+    Popout::update_outputs();
 }
 
 pub trait Audio {
     fn get_outputs(&self);
-    fn set_volume(&self, sink_id: String, volume: f64);
+    fn set_volume(&self, sink_id: String, volume: f32);
     fn set_muted(&self, sink_id: String, muted: bool);
 
     fn cleanup(&mut self) {}

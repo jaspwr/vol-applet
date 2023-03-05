@@ -1,17 +1,22 @@
+use std::collections::HashMap;
 use std::rc::Rc;
 
 use gdk_sys::GdkRectangle;
+use gtk::glib::idle_add_once;
 use gtk::traits::{GtkWindowExt, WidgetExt, ContainerExt};
 use gtk::{Application, ApplicationWindow, Inhibit};
 
-use crate::{audio, AUDIO, POPOUT};
+use crate::audio::shared_output_list::{self, Output, is_default_output};
+use crate::tray_icon::TrayIcon;
+use crate::{audio, AUDIO, POPOUT, TRAY_ICON};
 use crate::elements::VolumeSlider;
 
 pub struct Popout {
     pub container: GtkBoxWrapper,
     pub win: ApplicationWindowWrapper,
     visible: bool,
-    geometry_last: Option<(GdkRectangle, i32)>
+    geometry_last: Option<(GdkRectangle, i32)>,
+    pub sliders: HashMap<String, Box<VolumeSlider>> 
 }
 
 unsafe impl Sync for GtkBoxWrapper {}
@@ -54,7 +59,8 @@ impl Popout {
             container: GtkBoxWrapper { container },
             win: ApplicationWindowWrapper { win },
             visible: false,
-            geometry_last: None
+            geometry_last: None,
+            sliders: HashMap::new()
         };
 
 
@@ -95,40 +101,82 @@ impl Popout {
         });
     }
 
-    pub fn update_outputs(&mut self, container: &gtk::Box) {
+    pub fn set_specific_volume(output_id: String, volume: f32) {
+        idle_add_once(move || {
+            let mut a = POPOUT.lock().unwrap();
+            let popout = a.as_mut().unwrap();
+            popout.sliders.get(&output_id).unwrap().set_volume_slider(volume);
 
-        self.container.container.foreach(|w| {
-            self.container.container.remove(w);
         });
-
-        let outputs = audio::shared_output_list::get_output_list();
-
-        for output in outputs {
-            self.append_volume_slider(container, output);
-        }
-
-
-        self.win.win.show_all();
-
-        self.fix_window_position();
     }
 
-    pub fn append_volume_slider(&self, 
+    pub fn set_specific_muted(output_id: String, muted: bool) {
+        idle_add_once(move || {
+            let mut a = POPOUT.lock().unwrap();
+            let popout = a.as_mut().unwrap();
+            popout.sliders.get(&output_id).unwrap().set_muted(muted);
+        });
+    }
+
+    pub fn update_outputs() {
+        idle_add_once(|| {
+            let mut a = POPOUT.lock().unwrap();
+            let popout = a.as_mut().unwrap();
+            let container = popout.container.container.clone();
+            
+            popout.container.container.foreach(|w| {
+                popout.container.container.remove(w);
+            });
+
+            let outputs = audio::shared_output_list::get_output_list();
+
+            for output in outputs {
+                let id = output.output_id.clone();
+                popout.sliders.insert(output.output_id.clone(), 
+                    Box::new(popout.append_volume_slider(&container, output, is_default_output(id))));
+            }
+
+            if popout.visible {
+                popout.win.win.show_all();
+            }
+
+            popout.fix_window_position();
+        });
+
+        if let Ok(output) = shared_output_list::get_default_output() {
+            TrayIcon::set_volume(output.volume);
+        }
+    }
+
+    fn append_volume_slider(&self, 
         container: &gtk::Box,
-        output: audio::shared_output_list::Output) -> VolumeSlider {
+        output: audio::shared_output_list::Output,
+        is_default: bool) -> VolumeSlider {
 
         let id = output.output_id.clone();
         let id_ = output.output_id.clone();
-        let mut slider = VolumeSlider::new(container, 
+        let slider = VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
-            Rc::new(move |vol: f64| {
+            Rc::new(move |vol: f32| {
+                if is_default {
+                    TrayIcon::set_volume(vol);
+                }
                 AUDIO.lock().unwrap().aud.set_volume(id.clone(), vol);
             }),
-            Rc::new(move |mute: bool| {
-                AUDIO.lock().unwrap().aud.set_muted(id_.clone(), mute);
+            Rc::new(move || {
+                let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
+                let mut muted = false;
+                for output in list.iter_mut() {
+                    if output.output_id == id_ {
+                        muted = !output.muted;
+                        output.muted = muted;
+                        break;
+                    }
+                }
+                Popout::set_specific_muted(id_.clone(), muted);
+                AUDIO.lock().unwrap().aud.set_muted(id_.clone(), muted);
             })
         );
-        // slider.set_bar(vol);
         slider
     }
 
