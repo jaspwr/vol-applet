@@ -31,7 +31,6 @@ impl Pulse {
             //     pa_threaded_mainloop_wait(mainloop);
             //      std::thread::sleep(std::time::Duration::from_millis(100));
             // }
-
         }
 
         Pulse {
@@ -133,10 +132,50 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
         let state = pa_context_get_state(context);
         if state == PA_CONTEXT_READY {
             println!("PulseAudio context ready");
+            pa_context_set_subscribe_callback(context, Some(subscribe_callback), std::ptr::null_mut());
+            
+            let o = pa_context_subscribe(
+                context, 
+                PA_SUBSCRIPTION_MASK_SINK 
+                    // PA_SUBSCRIPTION_MASK_SOURCE |
+                    // PA_SUBSCRIPTION_MASK_SINK_INPUT |
+                    // PA_SUBSCRIPTION_MASK_SOURCE_OUTPUT |
+                    // PA_SUBSCRIPTION_MASK_CLIENT |
+                    // PA_SUBSCRIPTION_MASK_SERVER |
+                    // PA_SUBSCRIPTION_MASK_CARD
+                    ,
+                None, 
+                std::ptr::null_mut()
+            );
+            if o.is_null() {
+                println!("PulseAudio context subscription failed");
+            }
+
+            pa_operation_unref(o);
+
             AUDIO.lock().unwrap().aud.get_outputs();
             // pa_threaded_mainloop_signal(mainloop, 0);
+        } else if state == PA_CONTEXT_FAILED {
+            println!("PulseAudio context failed");
+        } else if state == PA_CONTEXT_TERMINATED {
+            println!("PulseAudio context terminated");
         }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn subscribe_callback(context: *mut pa_context, event_type: pa_subscription_event_type_t, _: u32, _: *mut c_void) {
+    println!("PulseAudio subscription callback");
+    if (event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK {
+        println!("hi");
+        shared_output_list::get_output_list().into_iter().for_each(|output: shared_output_list::Output| {
+            println!("hi {}", output.name);
+            // AUDIO.lock().unwrap().aud.ge
+            // AUDIO.lock().unwrap().aud.get_outputs();
+        });
+        // AUDIO.lock().unwrap().aud.get_outputs();
+    }
+    // AUDIO.lock().unwrap().aud.get_outputs();
 }
 
 impl Drop for Pulse {

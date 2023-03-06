@@ -29,7 +29,7 @@ fn main() {
         return;
     }
 
-    let _a = AUDIO.lock().unwrap();
+    AUDIO.lock().unwrap();
 
     let app = Application::builder()
         .application_id("com.github.jaspwr.vol-applet")

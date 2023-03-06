@@ -142,11 +142,6 @@ impl VolumeLevel {
     }
 
     fn to_icon(&self) -> &'static str {
-        const VOLUME_HIGH: &str = "audio-volume-high-symbolic";
-        const VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
-        const VOLUME_LOW: &str = "audio-volume-low-symbolic";
-        const VOLUME_MUTED: &str = "audio-volume-muted-symbolic"; 
-
         match self {
             VolumeLevel::High => VOLUME_HIGH,
             VolumeLevel::Medium => VOLUME_MEDIUM,
@@ -159,6 +154,8 @@ impl VolumeLevel {
 #[no_mangle]
 extern "C" fn status_icon_callback(_: gpointer, _: gpointer) {
     TRAY_ICON.lock().unwrap().as_mut().unwrap().align_popout();
+    println!(   "Status icon clicked");
+
     POPOUT.lock().unwrap().as_mut().unwrap().toggle_vis();
 }
 
@@ -177,3 +174,8 @@ unsafe fn g_signal_connect(
         std::mem::transmute(0),
     )
 }
+
+static VOLUME_HIGH: &str = "audio-volume-high-symbolic";
+static VOLUME_MEDIUM: &str = "audio-volume-medium-symbolic";
+static VOLUME_LOW: &str = "audio-volume-low-symbolic";
+static VOLUME_MUTED: &str = "audio-volume-muted-symbolic";

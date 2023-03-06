@@ -161,6 +161,16 @@ impl Popout {
                 if is_default {
                     TrayIcon::set_volume(vol);
                 }
+                // let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
+                
+                // // TODO: clean this up
+                // for output in list.iter_mut() {
+                //     if output.output_id == id {
+                //         output.volume = vol;
+                //         break;
+                //     }
+                // }
+
                 AUDIO.lock().unwrap().aud.set_volume(id.clone(), vol);
             }),
             Rc::new(move || {
@@ -186,13 +196,16 @@ impl Popout {
 
     fn show(&mut self) {
         audio::shared_output_list::clear_output_list();
+        
         AUDIO.lock().unwrap().aud.get_outputs();
         // self.win.win.show_all();
         // self.win.win.emit_grab_focus();
         // self.win.win.activate();
         // self.win.win.activate_focus();
         // self.win.win.grab_focus();
+
         self.fix_window_position();
+
         self.visible = true;
     }
 
@@ -202,6 +215,10 @@ impl Popout {
         } else {
             self.show();
         }
+    }
+
+    pub fn is_visible() -> bool {
+        POPOUT.lock().unwrap().as_ref().unwrap().visible
     }
 
 }
