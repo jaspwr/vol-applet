@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::{popout::Popout};
 
 mod pulseaudio;
+mod pipewire;
 pub mod shared_output_list;
 
 unsafe impl Send for WrappedAudio {}

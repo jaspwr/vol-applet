@@ -1,17 +1,16 @@
 use std::{ffi::c_void, sync::Mutex, collections::HashMap};
 
-use crate::{audio::{finish_output_list, shared_output_list}, AUDIO};
-
-
+use crate::{audio::{finish_output_list, shared_output_list}, AUDIO, popout::Popout};
 use super::Audio;
 
 use libpulse_sys::*;
 use once_cell::sync::Lazy;
 
 static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> = Lazy::new(|| Mutex::new(HashMap::new()));
+static GET_SINKS_CALLBACK_ID: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
 pub struct Pulse {
-    context: *mut pa_context, // TODO make option
+    context: *mut pa_context,
     mainloop: *mut pa_threaded_mainloop,
 }
 
@@ -42,8 +41,10 @@ impl Pulse {
 
 impl Audio for Pulse {
     fn get_outputs(&self) {
+        shared_output_list::clear_output_list();
+        *GET_SINKS_CALLBACK_ID.lock().unwrap() += 1;
         unsafe {
-            pa_context_get_sink_info_list(self.context, Some(sink_info_callback), std::ptr::null_mut());
+            pa_context_get_sink_info_list(self.context, Some(sink_info_callback), GET_SINKS_CALLBACK_ID.lock().unwrap().clone() as *mut c_void);
         }
     }
 
@@ -88,7 +89,10 @@ impl Audio for Pulse {
 }
 
 #[no_mangle]
-extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, _: *mut c_void) {
+extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, data: *mut c_void) {
+    if data != *GET_SINKS_CALLBACK_ID.lock().unwrap() as *mut c_void {
+        return;
+    }
     if eol == 0 {
         let sink_info_ptr = sink_info as *mut pa_sink_info;
         
@@ -165,17 +169,14 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
 
 #[no_mangle]
 pub extern "C" fn subscribe_callback(context: *mut pa_context, event_type: pa_subscription_event_type_t, _: u32, _: *mut c_void) {
-    println!("PulseAudio subscription callback");
     if (event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK {
-        println!("hi");
         shared_output_list::get_output_list().into_iter().for_each(|output: shared_output_list::Output| {
-            println!("hi {}", output.name);
-            // AUDIO.lock().unwrap().aud.ge
-            // AUDIO.lock().unwrap().aud.get_outputs();
+            Popout::handle_callback(|_: &mut Popout| {
+                // TODO: check things properly and set sliders/mute instead of replacing the whole list
+                AUDIO.lock().unwrap().aud.get_outputs();
+            });
         });
-        // AUDIO.lock().unwrap().aud.get_outputs();
     }
-    // AUDIO.lock().unwrap().aud.get_outputs();
 }
 
 impl Drop for Pulse {

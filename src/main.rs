@@ -5,7 +5,6 @@ use audio::WrappedAudio;
 use audio::get_audio;
 use gtk::Application;
 
-
 mod tray_icon;
 mod exception;
 mod popout;
@@ -16,7 +15,6 @@ use gtk::prelude::*;
 use once_cell::sync::Lazy;
 use popout::Popout;
 use tray_icon::TrayIcon;
-
 
 static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
 static POPOUT: Mutex<Option<Popout>> = Mutex::new(None);

@@ -14,9 +14,10 @@ use crate::elements::VolumeSlider;
 pub struct Popout {
     pub container: GtkBoxWrapper,
     pub win: ApplicationWindowWrapper,
+    pub sliders: HashMap<String, Box<VolumeSlider>>,
     visible: bool,
     geometry_last: Option<(GdkRectangle, i32)>,
-    pub sliders: HashMap<String, Box<VolumeSlider>> 
+    ignore_next_callback: bool
 }
 
 unsafe impl Sync for GtkBoxWrapper {}
@@ -60,9 +61,9 @@ impl Popout {
             win: ApplicationWindowWrapper { win },
             visible: false,
             geometry_last: None,
-            sliders: HashMap::new()
+            sliders: HashMap::new(),
+            ignore_next_callback: false
         };
-
 
         ret.add_hide_on_loose_focus();
         ret
@@ -71,7 +72,6 @@ impl Popout {
     pub fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
         let (width, height) = self.win.win.size();
         self.geometry_last = Some((area, ori));
-
 
         let (screen_wid, screen_hei) = (1920, 1080); // TODO
         let left = (area.x as f32 / screen_wid as f32) > 0.5;
@@ -88,10 +88,26 @@ impl Popout {
         }
     }
 
+    pub fn handle_callback(f: fn(&mut Popout)) {
+        let mut a = POPOUT.lock().unwrap();
+        let popout = a.as_mut().unwrap();
+        if popout.ignore_next_callback {
+            popout.ignore_next_callback = false;
+            return;
+        }
+        f(popout);
+    }
+
     pub fn fix_window_position(&mut self) {
         if self.geometry_last.is_none() { return; }
         let (area, ori) = self.geometry_last.unwrap();
         self.set_geomerty(area, ori);
+    }
+
+    pub fn set_ignore_next_callback() {
+        let mut a = POPOUT.lock().unwrap();
+        let popout = a.as_mut().unwrap();
+        popout.ignore_next_callback = true;
     }
 
     fn add_hide_on_loose_focus(&mut self) {
@@ -161,6 +177,7 @@ impl Popout {
                 if is_default {
                     TrayIcon::set_volume(vol);
                 }
+                Self::set_ignore_next_callback();
                 // let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
                 
                 // // TODO: clean this up
@@ -176,6 +193,7 @@ impl Popout {
             Rc::new(move || {
                 let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
                 let mut muted = false;
+                Self::set_ignore_next_callback();
                 for output in list.iter_mut() {
                     if output.output_id == id_ {
                         muted = !output.muted;
@@ -195,7 +213,6 @@ impl Popout {
     }
 
     fn show(&mut self) {
-        audio::shared_output_list::clear_output_list();
         
         AUDIO.lock().unwrap().aud.get_outputs();
         // self.win.win.show_all();

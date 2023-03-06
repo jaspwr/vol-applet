@@ -154,8 +154,6 @@ impl VolumeLevel {
 #[no_mangle]
 extern "C" fn status_icon_callback(_: gpointer, _: gpointer) {
     TRAY_ICON.lock().unwrap().as_mut().unwrap().align_popout();
-    println!(   "Status icon clicked");
-
     POPOUT.lock().unwrap().as_mut().unwrap().toggle_vis();
 }
 
