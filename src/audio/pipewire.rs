@@ -1,10 +1,10 @@
-use super::Audio;
+use super::{Audio, shared_output_list};
 
 struct Pipewire {
 }
 
 impl Audio for Pipewire {
-    fn get_outputs(&self) {
+    fn get_outputs(&self, after: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>) {
         todo!()
     }
 

@@ -1,6 +1,6 @@
 use std::{ffi::c_void, sync::Mutex, collections::HashMap};
 
-use crate::{audio::{finish_output_list, shared_output_list}, AUDIO, popout::Popout};
+use crate::{audio::{reload_outputs_in_popout, shared_output_list::{self, get_default_output}}, AUDIO, popout::Popout, tray_icon::TrayIcon};
 use super::Audio;
 
 use libpulse_sys::*;
@@ -39,12 +39,30 @@ impl Pulse {
     }
 }
 
+struct GetSinkListUserdata {
+    final_callback: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>,
+    call_id: u32,
+    list: Mutex<Vec<shared_output_list::Output>>
+}
+
 impl Audio for Pulse {
-    fn get_outputs(&self) {
-        shared_output_list::clear_output_list();
+    fn get_outputs(&self, after: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>) {
+        // shared_output_list::clear_output_list();
         *GET_SINKS_CALLBACK_ID.lock().unwrap() += 1;
+        
+        let userdata = Box::new(
+            GetSinkListUserdata {
+                final_callback: after,
+                call_id: GET_SINKS_CALLBACK_ID.lock().unwrap().clone(),
+                list: Mutex::new(vec![])
+            }
+        );
+
         unsafe {
-            pa_context_get_sink_info_list(self.context, Some(sink_info_callback), GET_SINKS_CALLBACK_ID.lock().unwrap().clone() as *mut c_void);
+            pa_context_get_sink_info_list(
+                self.context, 
+                Some(sink_info_callback), 
+                Box::into_raw(userdata) as *mut c_void);
         }
     }
 
@@ -89,20 +107,27 @@ impl Audio for Pulse {
 }
 
 #[no_mangle]
-extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, data: *mut c_void) {
-    if data != *GET_SINKS_CALLBACK_ID.lock().unwrap() as *mut c_void {
+extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_info, eol: i32, userdata: *mut c_void) {
+    let mut userdata = unsafe { Box::from_raw(userdata as *mut GetSinkListUserdata) };
+
+    if userdata.call_id != *GET_SINKS_CALLBACK_ID.lock().unwrap() {
+        if eol == 0 {
+            // Leak userdata again
+            Box::into_raw(userdata);
+        }
         return;
     }
+
     if eol == 0 {
         let sink_info_ptr = sink_info as *mut pa_sink_info;
         
-        let n = unsafe {
+        let output_id = unsafe {
             let name_ptr = (*sink_info_ptr).name;
             let name = std::ffi::CStr::from_ptr(name_ptr);
             name.to_string_lossy().to_string()
         };
 
-        let d = unsafe {
+        let name = unsafe {
             let desc_ptr = (*sink_info_ptr).description;
             let desc = std::ffi::CStr::from_ptr(desc_ptr);
             desc.to_string_lossy().to_string()
@@ -112,21 +137,23 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
             (*sink_info_ptr).mute != 0
         };
 
-        let vol: f32 = unsafe {
+        let volume: f32 = unsafe {
             let v = (*sink_info_ptr).volume;
-            PA_CVOLUMES.lock().unwrap().insert(n.clone(), Box::new(v));
+            PA_CVOLUMES.lock().unwrap().insert(output_id.clone(), Box::new(v));
             pa_cvolume_avg(&v) as f32 / 1000.
         };
-        
-        shared_output_list::add_output(
-            d,
-            vol,
-            muted,
-            n,
-        );
+
+
+        {
+            let mut list = userdata.list.lock().unwrap();
+            list.push(shared_output_list::Output { name, volume, muted, output_id })
+        }
+        // Leak userdata again
+        Box::into_raw(userdata);
     } else {
         // End of input
-        finish_output_list();
+        let vec = userdata.list.lock().unwrap();
+        (userdata.final_callback.as_mut())(vec.to_vec());
     }
 }
 
@@ -157,7 +184,11 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
 
             pa_operation_unref(o);
 
-            AUDIO.lock().unwrap().aud.get_outputs();
+            AUDIO.lock().unwrap().aud.get_outputs(
+                Box::new(|outputs: Vec<shared_output_list::Output>| {
+                    reload_outputs_in_popout(outputs);
+                }
+            ));
             // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
             println!("PulseAudio context failed");
@@ -170,12 +201,38 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
 #[no_mangle]
 pub extern "C" fn subscribe_callback(context: *mut pa_context, event_type: pa_subscription_event_type_t, _: u32, _: *mut c_void) {
     if (event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK {
-        shared_output_list::get_output_list().into_iter().for_each(|output: shared_output_list::Output| {
-            Popout::handle_callback(|_: &mut Popout| {
-                // TODO: check things properly and set sliders/mute instead of replacing the whole list
-                AUDIO.lock().unwrap().aud.get_outputs();
-            });
+        Popout::handle_callback(|_| {
+        
+            AUDIO.lock().unwrap().aud.get_outputs(Box::new(
+                |outputs: Vec<shared_output_list::Output>| {
+                    sink_change_subscription_event_handler(outputs);
+                }
+            ));
         });
+    }
+}
+
+fn sink_change_subscription_event_handler(outputs: Vec<shared_output_list::Output>) {
+    let mut old_outputs = shared_output_list::OUTPUT_LIST.lock().unwrap();
+    if outputs.len() != old_outputs.len() {
+        drop(old_outputs);
+        reload_outputs_in_popout(outputs);
+    } else {
+        for (i, output) in outputs.iter().enumerate() {
+            if output.volume != old_outputs[i].volume {
+                old_outputs[i].volume = output.volume;
+                Popout::set_specific_volume(output.output_id.clone(), output.volume);
+            
+                // if default_output.output_id == output.output_id {
+                if true { // TODO: check if default output
+                    TrayIcon::set_volume(output.volume);
+                }
+            }
+            if output.muted != old_outputs[i].muted {
+                old_outputs[i].muted = output.muted;
+                Popout::set_specific_muted(output.output_id.clone(), output.muted);
+            }
+        }
     }
 }
 

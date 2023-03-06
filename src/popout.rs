@@ -6,6 +6,7 @@ use gtk::glib::idle_add_once;
 use gtk::traits::{GtkWindowExt, WidgetExt, ContainerExt};
 use gtk::{Application, ApplicationWindow, Inhibit};
 
+use crate::audio::reload_outputs_in_popout;
 use crate::audio::shared_output_list::{self, is_default_output};
 use crate::tray_icon::TrayIcon;
 use crate::{audio, AUDIO, POPOUT};
@@ -214,7 +215,9 @@ impl Popout {
 
     fn show(&mut self) {
         
-        AUDIO.lock().unwrap().aud.get_outputs();
+        AUDIO.lock().unwrap().aud.get_outputs(Box::new(|outputs: Vec<shared_output_list::Output>| {
+            reload_outputs_in_popout(outputs);
+        }));
         // self.win.win.show_all();
         // self.win.win.emit_grab_focus();
         // self.win.win.activate();

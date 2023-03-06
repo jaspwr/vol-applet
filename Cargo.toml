@@ -1,5 +1,5 @@
 [package]
-name = "volume_tray_icon"
+name = "vol_applet"
 version = "0.1.0"
 edition = "2021"
 
