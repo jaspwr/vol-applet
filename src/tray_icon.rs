@@ -1,19 +1,19 @@
-use std::{ mem, ffi::c_void, sync::Mutex };
+use std::{ffi::c_void, mem, sync::Mutex};
 
 use gdk_sys::GdkRectangle;
-use gobject_sys::{ g_signal_connect_data, GCallback, GObject };
+use gobject_sys::{g_signal_connect_data, GCallback, GObject};
 use gtk::{
     gdk_pixbuf::Pixbuf,
-    IconLookupFlags,
+    glib::{ffi::gpointer, idle_add_once, translate::ToGlibPtr},
     traits::IconThemeExt,
-    glib::{ translate::ToGlibPtr, ffi::gpointer, idle_add_once },
+    IconLookupFlags,
 };
 use gtk_sys::*;
 
 use crate::{
+    audio::shared_output_list::{self, is_default_output},
     exception::Exception,
-    popout::{ Popout, self },
-    audio::shared_output_list::{ self, is_default_output },
+    popout::Popout,
 };
 
 static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
@@ -50,7 +50,7 @@ impl TrayIcon {
                 self.icon_ptr as *mut c_void,
                 "activate".to_glib_none().0,
                 Some(mem::transmute(status_icon_callback as *const ())),
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
         }
     }
@@ -104,6 +104,16 @@ impl TrayIcon {
         Popout::pub_set_geometry(area, ori);
     }
 
+    pub fn check_if_shows_muted(output: &shared_output_list::Output) {
+        if is_default_output(&output.id) {
+            if output.muted {
+                TrayIcon::set_volume(0.);
+            } else {
+                TrayIcon::set_volume(output.volume);
+            }
+        }
+    }
+
     pub fn initialise() {
         let mut tray_icon = Self {
             icon_ptr: std::ptr::null_mut(),
@@ -118,16 +128,6 @@ impl TrayIcon {
         };
         tray_icon.create_icon("Volume");
         TRAY_ICON.lock().unwrap().replace(tray_icon);
-    }
-
-    pub fn check_if_shows_muted(output: &shared_output_list::Output) {
-        if is_default_output(&output.id) {
-            if output.muted {
-                TrayIcon::set_volume(0.);
-            } else {
-                TrayIcon::set_volume(output.volume);
-            }
-        }
     }
 }
 
@@ -172,7 +172,7 @@ unsafe fn g_signal_connect(
     instance: gpointer,
     detailed_signal: *const i8,
     c_handler: GCallback,
-    data: gpointer
+    data: gpointer,
 ) -> u64 {
     g_signal_connect_data(
         instance as *mut GObject,
@@ -180,7 +180,7 @@ unsafe fn g_signal_connect(
         c_handler,
         data,
         None,
-        std::mem::transmute(0)
+        std::mem::transmute(0),
     )
 }
 

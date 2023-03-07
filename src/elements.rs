@@ -1,6 +1,9 @@
 use std::rc::Rc;
 
-use gtk::{ traits::{ ContainerExt, RangeExt, ButtonExt, GridExt }, glib };
+use gtk::{
+    glib,
+    traits::{ButtonExt, ContainerExt, GridExt, RangeExt},
+};
 
 unsafe impl Sync for VolumeSlider {}
 unsafe impl Send for VolumeSlider {}
@@ -16,11 +19,10 @@ impl VolumeSlider {
         start_value: f32,
         muted: bool,
         on_change_vol: Rc<dyn Fn(f32) + 'static>,
-        on_change_mute: Rc<dyn Fn() + 'static>
+        on_change_mute: Rc<dyn Fn() + 'static>,
     ) -> VolumeSlider {
         if let Some(label_text) = &label {
-            let label = gtk::Label
-                ::builder()
+            let label = gtk::Label::builder()
                 .label(&label_text.to_owned())
                 .halign(gtk::Align::Start)
                 .valign(gtk::Align::Start)
@@ -30,12 +32,10 @@ impl VolumeSlider {
 
         let volume_slider = gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 100.0, 1.0);
         volume_slider.set_value(start_value as f64);
-        volume_slider.connect_change_value(
-            move |_, _, d: f64| -> glib::signal::Inhibit {
-                on_change_vol(d as f32);
-                gtk::Inhibit(false)
-            }
-        );
+        volume_slider.connect_change_value(move |_, _, d: f64| -> glib::signal::Inhibit {
+            on_change_vol(d as f32);
+            gtk::Inhibit(false)
+        });
 
         let mute_icon = mute_button_icon(muted);
 
@@ -47,7 +47,13 @@ impl VolumeSlider {
         let grid: gtk::Grid = gtk::Grid::new();
         grid.set_column_spacing(10);
         grid.attach(&volume_slider, 0, 0, 30, 3);
-        grid.attach_next_to(&mute_button, Some(&volume_slider), gtk::PositionType::Right, 3, 3);
+        grid.attach_next_to(
+            &mute_button,
+            Some(&volume_slider),
+            gtk::PositionType::Right,
+            3,
+            3,
+        );
         container.add(&grid);
 
         VolumeSlider {
@@ -62,12 +68,17 @@ impl VolumeSlider {
 
     pub fn set_muted(&self, muted: bool) {
         let icon = mute_button_icon(muted);
-        self.mute_button.set_image(
-            Some(&gtk::Image::from_icon_name(Some(icon), gtk::IconSize::Button))
-        );
+        self.mute_button.set_image(Some(&gtk::Image::from_icon_name(
+            Some(icon),
+            gtk::IconSize::Button,
+        )));
     }
 }
 
 fn mute_button_icon(muted: bool) -> &'static str {
-    if muted { "audio-volume-muted" } else { "audio-volume-high" }
+    if muted {
+        "audio-volume-muted"
+    } else {
+        "audio-volume-high"
+    }
 }

@@ -1,20 +1,22 @@
-use std::{ ffi::c_void, sync::Mutex, collections::HashMap };
+use std::{collections::HashMap, ffi::c_void, sync::Mutex};
 
+use super::{shared_output_list::is_default_output, Audio};
 use crate::{
-    audio::{ reload_outputs_in_popout, shared_output_list::{ self, set_default_output } },
-    AUDIO,
+    audio::{
+        reload_outputs_in_popout,
+        shared_output_list::{self, set_default_output},
+    },
+    exception::Exception,
     popout::Popout,
     tray_icon::TrayIcon,
-    exception::Exception,
+    AUDIO,
 };
-use super::{ Audio, shared_output_list::is_default_output };
 
 use libpulse_sys::*;
 use once_cell::sync::Lazy;
 
-static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> = Lazy::new(||
-    Mutex::new(HashMap::new())
-);
+static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
 static GET_SINKS_CALLBACK_ID: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 
 pub struct Pulse {
@@ -34,14 +36,11 @@ impl Pulse {
             pa_context_set_state_callback(
                 context,
                 Some(context_state_callback),
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
         }
 
-        Pulse {
-            context,
-            mainloop,
-        }
+        Pulse { context, mainloop }
     }
 
     fn get_server_info(&self) {
@@ -49,7 +48,7 @@ impl Pulse {
             pa_context_get_server_info(
                 self.context,
                 Some(server_info_callback),
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
         }
     }
@@ -77,7 +76,7 @@ impl Audio for Pulse {
             pa_context_get_sink_info_list(
                 self.context,
                 Some(sink_info_callback),
-                Box::into_raw(userdata) as *mut c_void
+                Box::into_raw(userdata) as *mut c_void,
             );
         }
     }
@@ -94,7 +93,7 @@ impl Audio for Pulse {
                 sink_id.as_ptr() as *const i8,
                 cvol_ptr,
                 None,
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
         }
     }
@@ -106,7 +105,7 @@ impl Audio for Pulse {
                 sink_id.as_ptr() as *const i8,
                 muted as i32,
                 None,
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
         }
     }
@@ -126,7 +125,7 @@ extern "C" fn sink_info_callback(
     _: *mut pa_context,
     sink_info: *const pa_sink_info,
     eol: i32,
-    userdata: *mut c_void
+    userdata: *mut c_void,
 ) {
     let mut userdata = unsafe { Box::from_raw(userdata as *mut GetSinkListUserdata) };
 
@@ -157,13 +156,21 @@ extern "C" fn sink_info_callback(
 
         let volume: f32 = unsafe {
             let v = (*sink_info_ptr).volume;
-            PA_CVOLUMES.lock().unwrap().insert(output_id.clone(), Box::new(v));
+            PA_CVOLUMES
+                .lock()
+                .unwrap()
+                .insert(output_id.clone(), Box::new(v));
             (pa_cvolume_avg(&v) as f32) / 1000.
         };
 
         {
             let mut list = userdata.list.lock().unwrap();
-            list.push(shared_output_list::Output { name, volume, muted, id: output_id });
+            list.push(shared_output_list::Output {
+                name,
+                volume,
+                muted,
+                id: output_id,
+            });
         }
         // Leak userdata again
         Box::into_raw(userdata);
@@ -183,29 +190,26 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
             pa_context_set_subscribe_callback(
                 context,
                 Some(subscribe_callback),
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
 
             let o = pa_context_subscribe(
                 context,
                 PA_SUBSCRIPTION_MASK_SINK,
                 None,
-                std::ptr::null_mut()
+                std::ptr::null_mut(),
             );
             if o.is_null() {
-                Exception::Misc(
-                    "PulseAudio context subscription failed".to_string()
-                ).log_and_ignore();
+                Exception::Misc("PulseAudio context subscription failed".to_string())
+                    .log_and_ignore();
             }
             pa_operation_unref(o);
 
-            AUDIO.lock()
-                .unwrap()
-                .aud.get_outputs(
-                    Box::new(|outputs: Vec<shared_output_list::Output>| {
-                        reload_outputs_in_popout(outputs);
-                    })
-                );
+            AUDIO.lock().unwrap().aud.get_outputs(Box::new(
+                |outputs: Vec<shared_output_list::Output>| {
+                    reload_outputs_in_popout(outputs);
+                },
+            ));
 
             // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
@@ -221,17 +225,15 @@ pub extern "C" fn subscribe_callback(
     _: *mut pa_context,
     event_type: pa_subscription_event_type_t,
     _: u32,
-    _: *mut c_void
+    _: *mut c_void,
 ) {
     if (event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK {
         Popout::handle_callback(|_| {
-            AUDIO.lock()
-                .unwrap()
-                .aud.get_outputs(
-                    Box::new(|outputs: Vec<shared_output_list::Output>| {
-                        sink_change_subscription_event_handler(outputs);
-                    })
-                );
+            AUDIO.lock().unwrap().aud.get_outputs(Box::new(
+                |outputs: Vec<shared_output_list::Output>| {
+                    sink_change_subscription_event_handler(outputs);
+                },
+            ));
         });
     }
 }
@@ -240,7 +242,7 @@ pub extern "C" fn subscribe_callback(
 pub extern "C" fn server_info_callback(
     _: *mut pa_context,
     server_info: *const pa_server_info,
-    _: *mut c_void
+    _: *mut c_void,
 ) {
     unsafe {
         let default_sink_name = (*server_info).default_sink_name;

@@ -2,21 +2,21 @@ use std::sync::Arc;
 
 use crate::popout::Popout;
 
-mod pulseaudio;
 mod pipewire;
+mod pulseaudio;
 pub mod shared_output_list;
 
 unsafe impl Send for WrappedAudio {}
 unsafe impl Sync for WrappedAudio {}
 pub struct WrappedAudio {
-    pub aud: Arc<dyn Audio>
+    pub aud: Arc<dyn Audio>,
 }
 
 pub fn get_audio() -> WrappedAudio {
     // TODO: pick audio backend based on config
     WrappedAudio {
-        aud: Arc::new(pulseaudio::Pulse::new())
-    }   
+        aud: Arc::new(pulseaudio::Pulse::new()),
+    }
 }
 
 pub fn reload_outputs_in_popout(outputs: Vec<shared_output_list::Output>) {

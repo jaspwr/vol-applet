@@ -1,4 +1,4 @@
-use super::{ Audio, shared_output_list };
+use super::{shared_output_list, Audio};
 
 struct Pipewire {}
 
