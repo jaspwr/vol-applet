@@ -148,9 +148,9 @@ impl Popout {
             let outputs = audio::shared_output_list::get_output_list();
 
             for output in outputs {
-                let id = output.output_id.clone();
-                popout.sliders.insert(output.output_id.clone(), 
-                    Box::new(popout.append_volume_slider(&container, output, is_default_output(id))));
+                let id = output.id.clone();
+                popout.sliders.insert(output.id.clone(), 
+                    Box::new(popout.append_volume_slider(&container, output, is_default_output(&id))));
             }
 
             if popout.visible {
@@ -170,8 +170,8 @@ impl Popout {
         output: audio::shared_output_list::Output,
         is_default: bool) -> VolumeSlider {
 
-        let id = output.output_id.clone();
-        let id_ = output.output_id.clone();
+        let id = output.id.clone();
+        let id_ = output.id.clone();
         VolumeSlider::new(container, 
             Some(output.name), output.volume, output.muted,
             Rc::new(move |vol: f32| {
@@ -179,15 +179,6 @@ impl Popout {
                     TrayIcon::set_volume(vol);
                 }
                 Self::set_ignore_next_callback();
-                // let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
-                
-                // // TODO: clean this up
-                // for output in list.iter_mut() {
-                //     if output.output_id == id {
-                //         output.volume = vol;
-                //         break;
-                //     }
-                // }
 
                 AUDIO.lock().unwrap().aud.set_volume(id.clone(), vol);
             }),
@@ -196,7 +187,7 @@ impl Popout {
                 let mut muted = false;
                 Self::set_ignore_next_callback();
                 for output in list.iter_mut() {
-                    if output.output_id == id_ {
+                    if output.id == id_ {
                         muted = !output.muted;
                         output.muted = muted;
                         break;

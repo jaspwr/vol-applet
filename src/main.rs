@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use audio::WrappedAudio;
 use audio::get_audio;
+use exception::Exception;
 use gtk::Application;
 
 mod tray_icon;
@@ -22,9 +23,7 @@ static AUDIO: Lazy<Mutex<WrappedAudio>> = Lazy::new(|| Mutex::new(get_audio()));
 
 fn main() {
     if gtk::init().is_err() {
-        // TODO
-        println!("Error loading GTK!");
-        return;
+        Exception::Misc("Failed to initialize GTK.".to_string()).log_and_exit();
     }
 
     AUDIO.lock().unwrap();

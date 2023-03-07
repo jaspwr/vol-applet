@@ -57,7 +57,9 @@ impl TrayIcon {
         idle_add_once(move || {
             let mut tray_icon = TRAY_ICON.lock().unwrap();
             let tray_icon = tray_icon.as_mut().unwrap();
-            tray_icon.set_volume_icon_level(volume);
+            if let Err(e) = tray_icon.set_volume_icon_level(volume) {
+                e.log_and_ignore();
+            }
         });
     }
 

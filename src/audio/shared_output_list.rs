@@ -12,7 +12,7 @@ pub struct Output {
     pub name: String,
     pub volume: f32,
     pub muted: bool,
-    pub output_id: String,
+    pub id: String,
 }
 
 pub fn clear_output_list() {
@@ -22,7 +22,7 @@ pub fn clear_output_list() {
 
 pub fn add_output(name: String, volume: f32, muted: bool, output_id: String) {
     let mut output_list = OUTPUT_LIST.lock().unwrap();
-    output_list.push(Output { name, volume, muted, output_id });
+    output_list.push(Output { name, volume, muted, id: output_id });
 }
 
 pub fn get_output_list() -> Vec<Output> {
@@ -30,22 +30,19 @@ pub fn get_output_list() -> Vec<Output> {
     output_list.clone()
 }
 
-pub fn is_default_output(output_id: String) -> bool {
-    // TODO: Don't just return first.
-    let output_list = OUTPUT_LIST.lock().unwrap();
-    return output_id == output_list.first().unwrap().output_id;
+pub fn is_default_output(output_id: &String) -> bool {
+    *output_id == DEFAULT_OUTPUT_ID.lock().unwrap().to_string()
+}
 
-    output_id == DEFAULT_OUTPUT_ID.lock().unwrap().to_string()
+pub fn set_default_output(output_id: String) {
+    *DEFAULT_OUTPUT_ID.lock().unwrap() = output_id;
 }
 
 pub fn get_default_output() -> Result<Output, Exception> {
     let output_list = OUTPUT_LIST.lock().unwrap();
-    
-    // TODO: Don't just return first.
-    return output_list.first().ok_or(Exception::Misc("No default output found".to_string())).map(|o| o.clone());
-    
+
     for output in output_list.iter() {
-        if output.output_id == *DEFAULT_OUTPUT_ID.lock().unwrap() {
+        if output.id == *DEFAULT_OUTPUT_ID.lock().unwrap() {
             return Ok(output.clone());
         }
     }

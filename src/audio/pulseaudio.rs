@@ -1,7 +1,7 @@
 use std::{ffi::c_void, sync::Mutex, collections::HashMap};
 
-use crate::{audio::{reload_outputs_in_popout, shared_output_list::{self, get_default_output}}, AUDIO, popout::Popout, tray_icon::TrayIcon};
-use super::Audio;
+use crate::{audio::{reload_outputs_in_popout, shared_output_list::{self, get_default_output, set_default_output}}, AUDIO, popout::Popout, tray_icon::TrayIcon, exception::Exception};
+use super::{Audio, shared_output_list::is_default_output};
 
 use libpulse_sys::*;
 use once_cell::sync::Lazy;
@@ -37,7 +37,15 @@ impl Pulse {
             mainloop,
         }
     }
+
+    fn get_server_info(&self) {
+        unsafe {
+            pa_context_get_server_info(self.context, Some(server_info_callback), std::ptr::null_mut());
+        }
+    }
+    
 }
+
 
 struct GetSinkListUserdata {
     final_callback: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>,
@@ -47,6 +55,8 @@ struct GetSinkListUserdata {
 
 impl Audio for Pulse {
     fn get_outputs(&self, after: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>) {
+        self.get_server_info();
+        
         // shared_output_list::clear_output_list();
         *GET_SINKS_CALLBACK_ID.lock().unwrap() += 1;
         
@@ -146,7 +156,7 @@ extern "C" fn sink_info_callback(_: *mut pa_context, sink_info: *const pa_sink_i
 
         {
             let mut list = userdata.list.lock().unwrap();
-            list.push(shared_output_list::Output { name, volume, muted, output_id })
+            list.push(shared_output_list::Output { name, volume, muted, id: output_id })
         }
         // Leak userdata again
         Box::into_raw(userdata);
@@ -179,7 +189,7 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
                 std::ptr::null_mut()
             );
             if o.is_null() {
-                println!("PulseAudio context subscription failed");
+                Exception::Misc("PulseAudio context subscription failed".to_string()).log_and_ignore();
             }
 
             pa_operation_unref(o);
@@ -191,9 +201,9 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
             ));
             // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
-            println!("PulseAudio context failed");
+            Exception::Misc("PulseAudio context failed".to_string()).log_and_ignore();
         } else if state == PA_CONTEXT_TERMINATED {
-            println!("PulseAudio context terminated");
+            Exception::Misc("PulseAudio context terminated".to_string()).log_and_ignore();
         }
     }
 }
@@ -212,6 +222,16 @@ pub extern "C" fn subscribe_callback(context: *mut pa_context, event_type: pa_su
     }
 }
 
+#[no_mangle]
+pub extern "C" fn server_info_callback(_: *mut pa_context, server_info: *const pa_server_info, _: *mut c_void) {
+    unsafe {
+        let default_sink_name = (*server_info).default_sink_name;
+        let default_sink_name = std::ffi::CStr::from_ptr(default_sink_name);
+        let default_sink_name = default_sink_name.to_string_lossy().to_string();
+        set_default_output(default_sink_name);
+    }
+}
+
 fn sink_change_subscription_event_handler(outputs: Vec<shared_output_list::Output>) {
     let mut old_outputs = shared_output_list::OUTPUT_LIST.lock().unwrap();
     if outputs.len() != old_outputs.len() {
@@ -221,16 +241,15 @@ fn sink_change_subscription_event_handler(outputs: Vec<shared_output_list::Outpu
         for (i, output) in outputs.iter().enumerate() {
             if output.volume != old_outputs[i].volume {
                 old_outputs[i].volume = output.volume;
-                Popout::set_specific_volume(output.output_id.clone(), output.volume);
+                Popout::set_specific_volume(output.id.clone(), output.volume);
             
                 // if default_output.output_id == output.output_id {
-                if true { // TODO: check if default output
-                    TrayIcon::set_volume(output.volume);
+                if is_default_output(&output.id) {                    TrayIcon::set_volume(output.volume);
                 }
             }
             if output.muted != old_outputs[i].muted {
                 old_outputs[i].muted = output.muted;
-                Popout::set_specific_muted(output.output_id.clone(), output.muted);
+                Popout::set_specific_muted(output.id.clone(), output.muted);
             }
         }
     }
