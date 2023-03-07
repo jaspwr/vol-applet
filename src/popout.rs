@@ -1,46 +1,39 @@
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Mutex;
 
 use gdk_sys::GdkRectangle;
 use gtk::glib::idle_add_once;
-use gtk::traits::{GtkWindowExt, WidgetExt, ContainerExt};
-use gtk::{Application, ApplicationWindow, Inhibit};
+use gtk::traits::{ GtkWindowExt, WidgetExt, ContainerExt };
+use gtk::{ Application, ApplicationWindow, Inhibit };
 
 use crate::audio::reload_outputs_in_popout;
-use crate::audio::shared_output_list::{self, is_default_output};
+use crate::audio::shared_output_list::{ self, is_default_output };
 use crate::tray_icon::TrayIcon;
-use crate::{audio, AUDIO, POPOUT};
+use crate::{ audio, AUDIO };
 use crate::elements::VolumeSlider;
 
+static POPOUT: Mutex<Option<Popout>> = Mutex::new(None);
+
 pub struct Popout {
-    pub container: GtkBoxWrapper,
-    pub win: ApplicationWindowWrapper,
+    pub container: gtk::Box,
+    pub win: ApplicationWindow,
     pub sliders: HashMap<String, Box<VolumeSlider>>,
     visible: bool,
     geometry_last: Option<(GdkRectangle, i32)>,
-    ignore_next_callback: bool
+    ignore_next_callback: bool,
 }
-
-unsafe impl Sync for GtkBoxWrapper {}
-unsafe impl Send for GtkBoxWrapper {}
-pub struct GtkBoxWrapper {
-    pub container: gtk::Box
-}
-
-unsafe impl Sync for ApplicationWindowWrapper {}
-unsafe impl Send for ApplicationWindowWrapper {}
-pub struct ApplicationWindowWrapper {
-    pub win: ApplicationWindow
-}
+unsafe impl Sync for Popout {}
+unsafe impl Send for Popout {}
 
 impl Popout {
-    pub fn new(app: &Application) -> Popout {
+    pub fn initialise(app: &Application) {
         let win = ApplicationWindow::builder()
-                .application(app)
-                .default_width(320)
-                .default_height(50)
-                .title("Volume")
-                .build();
+            .application(app)
+            .default_width(320)
+            .default_height(50)
+            .title("Volume")
+            .build();
 
         win.set_decorated(false);
         win.set_keep_above(true);
@@ -49,7 +42,8 @@ impl Popout {
         win.set_type_hint(gtk::gdk::WindowTypeHint::PopupMenu);
         win.set_resizable(false);
 
-        let container = gtk::builders::BoxBuilder::new()
+        let container = gtk::builders::BoxBuilder
+            ::new()
             .margin(10)
             .spacing(6)
             .orientation(gtk::Orientation::Vertical)
@@ -57,35 +51,45 @@ impl Popout {
 
         win.set_child(Some(&container));
 
-        let mut ret = Self {
-            container: GtkBoxWrapper { container },
-            win: ApplicationWindowWrapper { win },
+        let mut popout = Self {
+            container,
+            win,
             visible: false,
             geometry_last: None,
             sliders: HashMap::new(),
-            ignore_next_callback: false
+            ignore_next_callback: false,
         };
 
-        ret.add_hide_on_loose_focus();
-        ret
+        popout.add_hide_on_loose_focus();
+
+        POPOUT.lock().unwrap().replace(popout);
     }
 
-    pub fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
-        let (width, height) = self.win.win.size();
+    pub fn pub_set_geometry(area: GdkRectangle, ori: i32) {
+        idle_add_once(move || {
+            let mut a = POPOUT.lock().unwrap();
+            let popout = a.as_mut().unwrap();
+            popout.set_geomerty(area, ori);
+        });
+    }
+
+    fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
+
+        let (width, height) = self.win.size();
         self.geometry_last = Some((area, ori));
 
         let (screen_wid, screen_hei) = (1920, 1080); // TODO
-        let left = (area.x as f32 / screen_wid as f32) > 0.5;
-        let top = (area.y as f32 / screen_hei as f32) > 0.5;
+        let left = (area.x as f32) / (screen_wid as f32) > 0.5;
+        let top = (area.y as f32) / (screen_hei as f32) > 0.5;
 
         if top && left {
-            self.win.win.move_(area.x - width, area.y - height);
+            self.win.move_(area.x - width, area.y - height);
         } else if top && !left {
-            self.win.win.move_(area.x + area.width, area.y - height);
+            self.win.move_(area.x + area.width, area.y - height);
         } else if !top && left {
-            self.win.win.move_(area.x - width, area.y + area.height);
+            self.win.move_(area.x - width, area.y + area.height);
         } else if !top && !left {
-            self.win.win.move_(area.x + area.width, area.y + area.height);
+            self.win.move_(area.x + area.width, area.y + area.height);
         }
     }
 
@@ -99,8 +103,10 @@ impl Popout {
         f(popout);
     }
 
-    pub fn fix_window_position(&mut self) {
-        if self.geometry_last.is_none() { return; }
+    fn fix_window_position(&mut self) {
+        if self.geometry_last.is_none() {
+            return;
+        }
         let (area, ori) = self.geometry_last.unwrap();
         self.set_geomerty(area, ori);
     }
@@ -112,7 +118,7 @@ impl Popout {
     }
 
     fn add_hide_on_loose_focus(&mut self) {
-        self.win.win.connect_focus_out_event(|_, _| -> Inhibit {
+        self.win.connect_focus_out_event(|_, _| -> Inhibit {
             POPOUT.lock().unwrap().as_mut().unwrap().hide();
             gtk::Inhibit(false)
         });
@@ -123,7 +129,6 @@ impl Popout {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
             popout.sliders.get(&output_id).unwrap().set_volume_slider(volume);
-
         });
     }
 
@@ -139,22 +144,14 @@ impl Popout {
         idle_add_once(|| {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            let container = popout.container.container.clone();
-            
-            popout.container.container.foreach(|w| {
-                popout.container.container.remove(w);
-            });
+            let container = popout.container.clone();
 
-            let outputs = audio::shared_output_list::get_output_list();
+            remove_child_widgets(popout);
 
-            for output in outputs {
-                let id = output.id.clone();
-                popout.sliders.insert(output.id.clone(), 
-                    Box::new(popout.append_volume_slider(&container, output, is_default_output(&id))));
-            }
+            add_outputs_from_list(popout, container);
 
             if popout.visible {
-                popout.win.win.show_all();
+                popout.win.show_all();
             }
 
             popout.fix_window_position();
@@ -165,71 +162,101 @@ impl Popout {
         }
     }
 
-    fn append_volume_slider(&self, 
+    fn append_volume_slider(
+        &self,
         container: &gtk::Box,
         output: audio::shared_output_list::Output,
-        is_default: bool) -> VolumeSlider {
-
+        is_default: bool
+    ) -> VolumeSlider {
         let id = output.id.clone();
         let id_ = output.id.clone();
-        VolumeSlider::new(container, 
-            Some(output.name), output.volume, output.muted,
+        VolumeSlider::new(
+            container,
+            Some(output.name),
+            output.volume,
+            output.muted,
             Rc::new(move |vol: f32| {
-                if is_default {
-                    TrayIcon::set_volume(vol);
-                }
-                Self::set_ignore_next_callback();
-
-                AUDIO.lock().unwrap().aud.set_volume(id.clone(), vol);
+                handle_volume_slider_change(is_default, vol, id.clone());
             }),
             Rc::new(move || {
-                let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
-                let mut muted = false;
-                Self::set_ignore_next_callback();
-                for output in list.iter_mut() {
-                    if output.id == id_ {
-                        muted = !output.muted;
-                        output.muted = muted;
-                        break;
-                    }
-                }
-                Popout::set_specific_muted(id_.clone(), muted);
-                AUDIO.lock().unwrap().aud.set_muted(id_.clone(), muted);
+                handle_mute_button(id_.clone());
             })
         )
     }
 
     fn hide(&mut self) {
-        self.win.win.hide();
+        self.win.hide();
         self.visible = false;
     }
 
     fn show(&mut self) {
-        
-        AUDIO.lock().unwrap().aud.get_outputs(Box::new(|outputs: Vec<shared_output_list::Output>| {
-            reload_outputs_in_popout(outputs);
-        }));
-        // self.win.win.show_all();
-        // self.win.win.emit_grab_focus();
-        // self.win.win.activate();
-        // self.win.win.activate_focus();
-        // self.win.win.grab_focus();
+        AUDIO.lock()
+            .unwrap()
+            .aud.get_outputs(
+                Box::new(|outputs: Vec<shared_output_list::Output>| {
+                    reload_outputs_in_popout(outputs);
+                })
+            );
+
 
         self.fix_window_position();
 
         self.visible = true;
     }
 
-    pub fn toggle_vis(&mut self) {
-        if self.visible {
-            self.hide();
+    pub fn toggle_vis() {
+        let mut a = POPOUT.lock().unwrap();
+        let popout = a.as_mut().unwrap();
+        if popout.visible {
+            popout.hide();
         } else {
-            self.show();
+            popout.show();
         }
     }
+}
 
-    pub fn is_visible() -> bool {
-        POPOUT.lock().unwrap().as_ref().unwrap().visible
+fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
+    let outputs = audio::shared_output_list::get_output_list();
+    for output in outputs {
+        let id = output.id.clone();
+        popout.sliders.insert(
+            output.id.clone(),
+            Box::new(
+                popout.append_volume_slider(&container, output, is_default_output(&id))
+            )
+        );
     }
+}
 
+fn remove_child_widgets(popout: &mut Popout) {
+    popout.container.foreach(|w| {
+        popout.container.remove(w);
+    });
+}
+
+fn handle_volume_slider_change(is_default: bool, vol: f32, id: String) {
+    if is_default {
+        TrayIcon::set_volume(vol);
+    }
+    Popout::set_ignore_next_callback();
+
+    AUDIO.lock().unwrap().aud.set_volume(id, vol);
+}
+
+fn handle_mute_button(id: String) {
+    let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
+    let mut muted = false;
+    Popout::set_ignore_next_callback();
+    for output in list.iter_mut() {
+        if output.id == id {
+            muted = !output.muted;
+            output.muted = muted;
+
+            TrayIcon::check_if_shows_muted(output);
+
+            break;
+        }
+    }
+    Popout::set_specific_muted(id.clone(), muted);
+    AUDIO.lock().unwrap().aud.set_muted(id, muted);
 }

@@ -1,8 +1,6 @@
-
 use std::sync::Arc;
 
-
-use crate::{popout::Popout, POPOUT};
+use crate::popout::Popout;
 
 mod pulseaudio;
 mod pipewire;

@@ -1,8 +1,8 @@
-use super::{Audio, shared_output_list};
+use super::{ Audio, shared_output_list };
 
-struct Pipewire {
-}
+struct Pipewire {}
 
+#[allow(unused_variables)] // Remove once implemented
 impl Audio for Pipewire {
     fn get_outputs(&self, after: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>) {
         todo!()

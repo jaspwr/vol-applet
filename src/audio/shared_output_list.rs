@@ -15,16 +15,6 @@ pub struct Output {
     pub id: String,
 }
 
-pub fn clear_output_list() {
-    let mut output_list = OUTPUT_LIST.lock().unwrap();
-    output_list.clear();
-}
-
-pub fn add_output(name: String, volume: f32, muted: bool, output_id: String) {
-    let mut output_list = OUTPUT_LIST.lock().unwrap();
-    output_list.push(Output { name, volume, muted, id: output_id });
-}
-
 pub fn get_output_list() -> Vec<Output> {
     let output_list = OUTPUT_LIST.lock().unwrap();
     output_list.clone()

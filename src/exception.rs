@@ -1,13 +1,13 @@
 use owo_colors::OwoColorize;
 
 pub enum Exception {
-    Misc(String)
+    Misc(String),
 }
 
 impl Exception {
     fn stringify(&self) -> &String {
         match self {
-            Exception::Misc(s) => s
+            Exception::Misc(s) => s,
         }
     }
 

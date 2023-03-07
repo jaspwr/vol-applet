@@ -1,28 +1,31 @@
-use std::{mem, ffi::c_void};
+use std::{ mem, ffi::c_void, sync::Mutex };
 
 use gdk_sys::GdkRectangle;
-use gobject_sys::{g_signal_connect_data, GCallback, GObject};
-use gtk::{gdk_pixbuf::Pixbuf, IconLookupFlags,
+use gobject_sys::{ g_signal_connect_data, GCallback, GObject };
+use gtk::{
+    gdk_pixbuf::Pixbuf,
+    IconLookupFlags,
     traits::IconThemeExt,
-    glib::{translate::ToGlibPtr, ffi::gpointer, idle_add_once}};
+    glib::{ translate::ToGlibPtr, ffi::gpointer, idle_add_once },
+};
 use gtk_sys::*;
 
-use crate::{exception::Exception, TRAY_ICON, POPOUT};
+use crate::{
+    exception::Exception,
+    popout::{ Popout, self },
+    audio::shared_output_list::{ self, is_default_output },
+};
 
-
+static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
 
 pub struct TrayIcon {
-    icon_ptr: StatusIconPtr,
+    icon_ptr: *mut gtk_sys::GtkStatusIcon,
     area: GdkRectangle,
     orientation: GtkOrientation,
-    level: VolumeLevel
+    level: VolumeLevel,
 }
-
-unsafe impl Sync for StatusIconPtr {}
-unsafe impl Send for StatusIconPtr {}
-struct StatusIconPtr {
-    ptr: *mut gtk_sys::GtkStatusIcon
-}
+unsafe impl Sync for TrayIcon {}
+unsafe impl Send for TrayIcon {}
 
 impl TrayIcon {
     fn fetch_icon(icon_name: &str) -> Option<Pixbuf> {
@@ -31,29 +34,28 @@ impl TrayIcon {
         let icon = theme.lookup_icon(icon_name, 16, flags)?;
         match icon.load_icon() {
             Ok(icon_pix) => Some(icon_pix),
-            Err(_) => None
+            Err(_) => None,
         }
     }
 
-    pub fn create_icon(&mut self, tooltip: &str) {
+    fn create_icon(&mut self, tooltip: &str) {
         let icon_pix = Self::fetch_icon(self.level.to_icon()).unwrap();
 
         unsafe {
-            self.icon_ptr.ptr = gtk_status_icon_new_from_pixbuf(icon_pix.to_glib_none().0);
-            gtk_status_icon_set_tooltip_markup(self.icon_ptr.ptr, tooltip.to_glib_none().0);
-            gtk_status_icon_set_visible(self.icon_ptr.ptr, 1);
-            
+            self.icon_ptr = gtk_status_icon_new_from_pixbuf(icon_pix.to_glib_none().0);
+            gtk_status_icon_set_tooltip_markup(self.icon_ptr, tooltip.to_glib_none().0);
+            gtk_status_icon_set_visible(self.icon_ptr, 1);
 
             g_signal_connect(
-                self.icon_ptr.ptr as *mut c_void, 
-                "activate".to_glib_none().0, 
+                self.icon_ptr as *mut c_void,
+                "activate".to_glib_none().0,
                 Some(mem::transmute(status_icon_callback as *const ())),
                 std::ptr::null_mut()
             );
         }
     }
 
-    pub fn set_volume (volume: f32) {
+    pub fn set_volume(volume: f32) {
         idle_add_once(move || {
             let mut tray_icon = TRAY_ICON.lock().unwrap();
             let tray_icon = tray_icon.as_mut().unwrap();
@@ -65,20 +67,22 @@ impl TrayIcon {
 
     fn set_volume_icon_level(&mut self, volume: f32) -> Result<(), Exception> {
         let new_lvl = VolumeLevel::from_volume(volume);
-        if self.level == new_lvl { return Ok(()) };
+        if self.level == new_lvl {
+            return Ok(());
+        }
         self.level = new_lvl;
         match Self::fetch_icon(self.level.to_icon()) {
             Some(icon_pix) => {
                 self.set_icon(icon_pix);
                 Ok(())
-            },
-            None => Err(Exception::Misc("Could not find icon".to_string()))
+            }
+            None => Err(Exception::Misc("Could not find icon".to_string())),
         }
     }
 
     fn set_icon(&self, icon_pixbuf: Pixbuf) {
         unsafe {
-            gtk_status_icon_set_from_pixbuf(self.icon_ptr.ptr, icon_pixbuf.to_glib_none().0);
+            gtk_status_icon_set_from_pixbuf(self.icon_ptr, icon_pixbuf.to_glib_none().0);
         }
     }
 
@@ -86,28 +90,23 @@ impl TrayIcon {
         let area_ptr: *mut GdkRectangle = &mut self.area;
         let orient_ptr: *mut GtkOrientation = &mut self.orientation;
         unsafe {
-            gtk_status_icon_get_geometry(
-                self.icon_ptr.ptr,
-                std::ptr::null_mut(),
-                area_ptr,
-                orient_ptr,
-            );
+            gtk_status_icon_get_geometry(self.icon_ptr, std::ptr::null_mut(), area_ptr, orient_ptr);
         }
     }
 
-    pub fn get_geometry(&mut self) -> (GdkRectangle, GtkOrientation) {
+    fn get_geometry(&mut self) -> (GdkRectangle, GtkOrientation) {
         self.refetch_geometry();
         (self.area, self.orientation)
     }
 
     pub fn align_popout(&mut self) {
         let (area, ori) = self.get_geometry();
-        POPOUT.lock().unwrap().as_mut().unwrap().set_geomerty(area, ori);
+        Popout::pub_set_geometry(area, ori);
     }
 
-    pub fn new() -> Self {
+    pub fn initialise() {
         let mut tray_icon = Self {
-            icon_ptr: StatusIconPtr { ptr: std::ptr::null_mut() },
+            icon_ptr: std::ptr::null_mut(),
             area: GdkRectangle {
                 x: 0,
                 y: 0,
@@ -118,7 +117,17 @@ impl TrayIcon {
             level: VolumeLevel::High,
         };
         tray_icon.create_icon("Volume");
-        tray_icon
+        TRAY_ICON.lock().unwrap().replace(tray_icon);
+    }
+
+    pub fn check_if_shows_muted(output: &shared_output_list::Output) {
+        if is_default_output(&output.id) {
+            if output.muted {
+                TrayIcon::set_volume(0.);
+            } else {
+                TrayIcon::set_volume(output.volume);
+            }
+        }
     }
 }
 
@@ -127,7 +136,7 @@ enum VolumeLevel {
     High,
     Medium,
     Low,
-    Muted
+    Muted,
 }
 
 impl VolumeLevel {
@@ -148,7 +157,7 @@ impl VolumeLevel {
             VolumeLevel::High => VOLUME_HIGH,
             VolumeLevel::Medium => VOLUME_MEDIUM,
             VolumeLevel::Low => VOLUME_LOW,
-            VolumeLevel::Muted => VOLUME_MUTED
+            VolumeLevel::Muted => VOLUME_MUTED,
         }
     }
 }
@@ -156,14 +165,14 @@ impl VolumeLevel {
 #[no_mangle]
 extern "C" fn status_icon_callback(_: gpointer, _: gpointer) {
     TRAY_ICON.lock().unwrap().as_mut().unwrap().align_popout();
-    POPOUT.lock().unwrap().as_mut().unwrap().toggle_vis();
+    Popout::toggle_vis();
 }
 
 unsafe fn g_signal_connect(
     instance: gpointer,
     detailed_signal: *const i8,
     c_handler: GCallback,
-    data: gpointer,
+    data: gpointer
 ) -> u64 {
     g_signal_connect_data(
         instance as *mut GObject,
@@ -171,7 +180,7 @@ unsafe fn g_signal_connect(
         c_handler,
         data,
         None,
-        std::mem::transmute(0),
+        std::mem::transmute(0)
     )
 }
 
