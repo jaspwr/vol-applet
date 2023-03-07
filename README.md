@@ -1,6 +1,8 @@
 # Volume Applet
 A simple GTK system tray volume controller applet for PulseAudio. Support for PipeWire is planned.
 
+> In it's current state there may be issues running on Wayland and/or with multiple monitors. If you experience any issues, please open an issue.
+
 ![Example](https://github.com/jaspwr/vol-applet/blob/main/assets/example.png)
 
 ## Installation
@@ -15,6 +17,10 @@ cargo build --release
 ```
 The binary will be located at `target/release/volapplet`.
 
+## Usage
+```bash
+volapplet & disown
+```
 
 ## Dependencies
 * Rust and Cargo

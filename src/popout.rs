@@ -3,15 +3,17 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use gdk_sys::GdkRectangle;
+use gtk::gdk::Display;
 use gtk::glib::idle_add_once;
-use gtk::traits::{ContainerExt, GtkWindowExt, WidgetExt};
-use gtk::{Application, ApplicationWindow, Inhibit};
+use gtk::traits::{ ContainerExt, GtkWindowExt, WidgetExt };
+use gtk::{ Application, ApplicationWindow, Inhibit };
 
 use crate::audio::reload_outputs_in_popout;
-use crate::audio::shared_output_list::{self, is_default_output};
+use crate::audio::shared_output_list::{ self, is_default_output };
 use crate::elements::VolumeSlider;
+use crate::exception::Exception;
 use crate::tray_icon::TrayIcon;
-use crate::{audio, AUDIO};
+use crate::{ audio, AUDIO };
 
 static POPOUT: Mutex<Option<Popout>> = Mutex::new(None);
 
@@ -42,7 +44,8 @@ impl Popout {
         win.set_type_hint(gtk::gdk::WindowTypeHint::PopupMenu);
         win.set_resizable(false);
 
-        let container = gtk::builders::BoxBuilder::new()
+        let container = gtk::builders::BoxBuilder
+            ::new()
             .margin(10)
             .spacing(6)
             .orientation(gtk::Orientation::Vertical)
@@ -76,21 +79,17 @@ impl Popout {
         let (width, height) = self.win.size();
         self.geometry_last = Some((area, ori));
 
-        let (screen_wid, screen_hei) = (1920, 1080); // TODO
+        let (screen_wid, screen_hei) = screen_dimensions(); // TODO cache maybe
         let left = (area.x as f32) / (screen_wid as f32) < 0.5;
         let top = (area.y as f32) / (screen_hei as f32) < 0.5;
 
         if top && left {
-            println!("up left");
             self.win.move_(area.x + area.width, area.y);
         } else if top && !left {
-            println!("up right");
             self.win.move_(area.x - width, area.y);
         } else if !top && left {
-            println!("down left");
             self.win.move_(area.x + area.width, area.y + area.height - height);
         } else if !top && !left {
-            println!("down right");
             self.win.move_(area.x - width, area.y + area.height - height);
         }
     }
@@ -130,11 +129,7 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout
-                .sliders
-                .get(&output_id)
-                .unwrap()
-                .set_volume_slider(volume);
+            popout.sliders.get(&output_id).unwrap().set_volume_slider(volume);
         });
     }
 
@@ -172,7 +167,7 @@ impl Popout {
         &self,
         container: &gtk::Box,
         output: audio::shared_output_list::Output,
-        is_default: bool,
+        is_default: bool
     ) -> VolumeSlider {
         let id = output.id.clone();
         let id_ = output.id.clone();
@@ -186,7 +181,7 @@ impl Popout {
             }),
             Rc::new(move || {
                 handle_mute_button(id_.clone());
-            }),
+            })
         )
     }
 
@@ -196,11 +191,13 @@ impl Popout {
     }
 
     fn show(&mut self) {
-        AUDIO.lock().unwrap().aud.get_outputs(Box::new(
-            |outputs: Vec<shared_output_list::Output>| {
-                reload_outputs_in_popout(outputs);
-            },
-        ));
+        AUDIO.lock()
+            .unwrap()
+            .aud.get_outputs(
+                Box::new(|outputs: Vec<shared_output_list::Output>| {
+                    reload_outputs_in_popout(outputs);
+                })
+            );
 
         self.fix_window_position();
 
@@ -224,7 +221,7 @@ fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
         let id = output.id.clone();
         popout.sliders.insert(
             output.id.clone(),
-            Box::new(popout.append_volume_slider(&container, output, is_default_output(&id))),
+            Box::new(popout.append_volume_slider(&container, output, is_default_output(&id)))
         );
     }
 }
@@ -260,4 +257,20 @@ fn handle_mute_button(id: String) {
     }
     Popout::set_specific_muted(id.clone(), muted);
     AUDIO.lock().unwrap().aud.set_muted(id, muted);
+}
+
+fn screen_dimensions() -> (i32, i32) {
+    match fetch_screen_dimensions() {
+        Some(dims) => dims,
+        None => {
+            Exception::Misc("Failed to get screen dimensions.".to_string()).log_and_ignore();
+            (1920, 1080)
+        }
+    }
+}
+
+fn fetch_screen_dimensions() -> Option<(i32, i32)> {
+    let display = Display::default()?;
+    let workspace = display.primary_monitor()?.workarea();
+    Some((workspace.width(), workspace.height()))
 }

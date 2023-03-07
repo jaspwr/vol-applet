@@ -60,7 +60,7 @@ impl TrayIcon {
             let mut tray_icon = TRAY_ICON.lock().unwrap();
             let tray_icon = tray_icon.as_mut().unwrap();
             if let Err(e) = tray_icon.set_volume_icon_level(volume) {
-                e.log_and_ignore();
+                e.log_and_exit();
             }
         });
     }
@@ -92,9 +92,10 @@ impl TrayIcon {
         unsafe {
             gtk_status_icon_get_geometry(self.icon_ptr, std::ptr::null_mut(), area_ptr, orient_ptr);
         }
+
     }
 
-    fn get_geometry(&mut self) -> (GdkRectangle, GtkOrientation) {
+    pub fn get_geometry(&mut self) -> (GdkRectangle, GtkOrientation) {
         self.refetch_geometry();
         (self.area, self.orientation)
     }

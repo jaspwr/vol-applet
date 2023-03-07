@@ -4,7 +4,7 @@ use super::{shared_output_list::is_default_output, Audio};
 use crate::{
     audio::{
         reload_outputs_in_popout,
-        shared_output_list::{self, set_default_output},
+        shared_output_list::{self, set_default_output}, get_audio,
     },
     exception::Exception,
     popout::Popout,
@@ -18,6 +18,8 @@ use once_cell::sync::Lazy;
 static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 static GET_SINKS_CALLBACK_ID: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
+static IN_RECONNECT_LOOP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
+
 
 pub struct Pulse {
     context: *mut pa_context,
@@ -114,8 +116,8 @@ impl Audio for Pulse {
         unsafe {
             pa_context_disconnect(self.context);
             pa_context_unref(self.context);
-            pa_threaded_mainloop_stop(self.mainloop);
-            pa_threaded_mainloop_free(self.mainloop);
+            // pa_threaded_mainloop_stop(self.mainloop);
+            // pa_threaded_mainloop_free(self.mainloop);
         }
     }
 }
@@ -186,7 +188,7 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
     unsafe {
         let state = pa_context_get_state(context);
         if state == PA_CONTEXT_READY {
-            println!("PulseAudio context ready");
+            *IN_RECONNECT_LOOP.lock().unwrap() = false;
             pa_context_set_subscribe_callback(
                 context,
                 Some(subscribe_callback),
@@ -213,9 +215,11 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
 
             // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
-            Exception::Misc("PulseAudio context failed".to_string()).log_and_ignore();
+            Exception::Misc("Failed to connect to PulseAudio (PulseAudio context failed).".to_string()).log_and_ignore();
+            retry_connection_loop();
         } else if state == PA_CONTEXT_TERMINATED {
-            Exception::Misc("PulseAudio context terminated".to_string()).log_and_ignore();
+            retry_connection_loop();
+            Exception::Misc("Disconnected from PulseAudio (PulseAudio context terminated)".to_string()).log_and_ignore();
         }
     }
 }
@@ -275,6 +279,24 @@ fn sink_change_subscription_event_handler(outputs: Vec<shared_output_list::Outpu
             }
         }
     }
+}
+
+fn retry_connection_loop() {
+    if *IN_RECONNECT_LOOP.lock().unwrap() {
+        return;
+    }
+    *IN_RECONNECT_LOOP.lock().unwrap() = true;
+    let mut loop_counter = 0;
+    while loop_counter < 40 {
+        println!("Retrying connection...");
+        *AUDIO.lock().unwrap() = get_audio();
+        std::thread::sleep(std::time::Duration::from_secs(5));
+        if !*IN_RECONNECT_LOOP.lock().unwrap() {
+            return;
+        }
+        loop_counter += 1;
+    }
+    Exception::Misc("PulseAudio context not found.".to_string()).log_and_exit();
 }
 
 impl Drop for Pulse {
