@@ -215,11 +215,11 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
 
             // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
-            Exception::Misc("Failed to connect to PulseAudio (PulseAudio context failed).".to_string()).log_and_ignore();
+            Exception::Misc("Failed to connect to PulseAudio (PA_CONTEXT_FAILED).".to_string()).log_and_ignore();
             retry_connection_loop();
         } else if state == PA_CONTEXT_TERMINATED {
+            Exception::Misc("Disconnected from PulseAudio (PA_CONTEXT_TERMINATED)".to_string()).log_and_ignore();
             retry_connection_loop();
-            Exception::Misc("Disconnected from PulseAudio (PulseAudio context terminated)".to_string()).log_and_ignore();
         }
     }
 }
