@@ -64,6 +64,15 @@ impl Popout {
 
         popout.add_hide_on_loose_focus();
 
+        popout.win.connect_check_resize(|_| {
+            match POPOUT.try_lock() {
+                Ok(mut mutex) => {
+                    mutex.as_mut().unwrap().fix_window_position();
+                },
+                Err(_) => {}
+            }
+        });
+
         POPOUT.lock().unwrap().replace(popout);
     }
 
@@ -78,6 +87,8 @@ impl Popout {
     fn set_geomerty(&mut self, area: GdkRectangle, ori: i32) {
         let (width, height) = self.win.size();
         self.geometry_last = Some((area, ori));
+
+        // let height: i32 = (self.sliders.len() * 80) as i32;
 
         let (screen_wid, screen_hei) = screen_dimensions(); // TODO cache maybe
         let left = (area.x as f32) / (screen_wid as f32) < 0.5;
@@ -105,6 +116,7 @@ impl Popout {
     }
 
     fn fix_window_position(&mut self) {
+        self.win.set_height_request(1);
         if self.geometry_last.is_none() {
             return;
         }
@@ -201,6 +213,9 @@ impl Popout {
 
         self.fix_window_position();
 
+        self.win.show();
+        self.win.present();
+
         self.visible = true;
     }
 
@@ -217,6 +232,7 @@ impl Popout {
 
 fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
     let outputs = audio::shared_output_list::get_output_list();
+    popout.sliders = HashMap::new();
     for output in outputs {
         let id = output.id.clone();
         popout.sliders.insert(

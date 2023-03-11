@@ -20,7 +20,7 @@ static PA_CVOLUMES: Lazy<Mutex<HashMap<String, Box<pa_cvolume>>>> =
 static GET_SINKS_CALLBACK_ID: Lazy<Mutex<u32>> = Lazy::new(|| Mutex::new(0));
 static IN_RECONNECT_LOOP: Lazy<Mutex<bool>> = Lazy::new(|| Mutex::new(false));
 
-
+#[allow(unused)] // TODO: Clean up unused
 pub struct Pulse {
     context: *mut pa_context,
     mainloop: *mut pa_threaded_mainloop,
