@@ -1,4 +1,6 @@
 # Volume Applet
+[![AUR](https://img.shields.io/aur/version/volapplet-git)](https://aur.archlinux.org/packages/volapplet-git)
+
 A simple GTK system tray volume controller applet for PulseAudio. Support for PipeWire is planned.
 
 > In it's current state there may be issues running on Wayland and/or with multiple monitors. If you experience any issues, please open an issue.
@@ -7,7 +9,7 @@ A simple GTK system tray volume controller applet for PulseAudio. Support for Pi
 
 ## Installation
 ### Arch Linux
-Clone this repository and install via the PKGBUILD.
+Install from the AUR at [volapplet-git](https://aur.archlinux.org/packages/volapplet-git).
 ### Other Linux
 Ensure you have the [dependencies](#dependencies) installed, then run:
 ```bash
