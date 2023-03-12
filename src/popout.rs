@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::sync::Mutex;
 
 use gdk_sys::GdkRectangle;
-use gtk::gdk::Display;
+use gtk::gdk::{Display, EventKey};
 use gtk::glib::idle_add_once;
 use gtk::traits::{ ContainerExt, GtkWindowExt, WidgetExt };
 use gtk::{ Application, ApplicationWindow, Inhibit };
@@ -50,6 +50,16 @@ impl Popout {
             .spacing(6)
             .orientation(gtk::Orientation::Vertical)
             .build();
+
+        win.connect_key_press_event(|_, e: &EventKey| -> Inhibit {
+            match e.keycode() {
+                Some(keycode) => {
+                    handle_keycode(keycode);
+                },
+                None => {},
+            }
+            gtk::Inhibit(false)
+        });
 
         win.set_child(Some(&container));
 
@@ -226,6 +236,18 @@ impl Popout {
             popout.hide();
         } else {
             popout.show();
+        }
+    }
+}
+
+fn handle_keycode(keycode: u16) {
+    const ESC: u16 = 9;
+    if keycode == ESC {
+        match POPOUT.try_lock() {
+            Ok(mut mutex) => {
+                mutex.as_mut().unwrap().hide()
+            },
+            Err(_) => {}
         }
     }
 }
