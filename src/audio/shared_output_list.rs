@@ -20,8 +20,14 @@ pub fn get_output_list() -> Vec<Output> {
     output_list.clone()
 }
 
-pub fn is_default_output(output_id: &String) -> bool {
+fn is_default_output(output_id: &String) -> bool {
     *output_id == DEFAULT_OUTPUT_ID.lock().unwrap().to_string()
+}
+
+impl Output {
+    pub fn is_default(&self) -> bool {
+        is_default_output(&self.id)
+    }
 }
 
 pub fn set_default_output(output_id: String) {

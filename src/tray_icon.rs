@@ -1,20 +1,16 @@
-use std::{ffi::c_void, mem, sync::Mutex};
+use std::{ ffi::c_void, mem, sync::Mutex };
 
 use gdk_sys::GdkRectangle;
-use gobject_sys::{g_signal_connect_data, GCallback, GObject};
+use gobject_sys::{ g_signal_connect_data, GCallback, GObject };
 use gtk::{
     gdk_pixbuf::Pixbuf,
-    glib::{ffi::gpointer, idle_add_once, translate::ToGlibPtr},
+    glib::{ ffi::gpointer, idle_add_once, translate::ToGlibPtr },
     traits::IconThemeExt,
     IconLookupFlags,
 };
 use gtk_sys::*;
 
-use crate::{
-    audio::shared_output_list::{self, is_default_output},
-    exception::Exception,
-    popout::Popout,
-};
+use crate::{ exception::Exception, popout::Popout, audio::{ Audio, shared_output_list }, AUDIO };
 
 static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
 
@@ -23,6 +19,8 @@ pub struct TrayIcon {
     area: GdkRectangle,
     orientation: GtkOrientation,
     level: VolumeLevel,
+    volume: f32,
+    muted: bool,
 }
 unsafe impl Sync for TrayIcon {}
 unsafe impl Send for TrayIcon {}
@@ -50,23 +48,34 @@ impl TrayIcon {
                 self.icon_ptr as *mut c_void,
                 "activate".to_glib_none().0,
                 Some(mem::transmute(status_icon_callback as *const ())),
-                std::ptr::null_mut(),
+                std::ptr::null_mut()
             );
         }
+        AUDIO.lock()
+            .unwrap()
+            .aud.get_outputs(Box::new(|outputs: Vec<shared_output_list::Output>| {
+                for output in outputs {
+                    if output.is_default() {
+                        TrayIcon::set_volume(output.volume);
+                        TrayIcon::set_muted(output.muted);
+                    }
+                }
+            }));
     }
 
     pub fn set_volume(volume: f32) {
         idle_add_once(move || {
-            let mut tray_icon = TRAY_ICON.lock().unwrap();
-            let tray_icon = tray_icon.as_mut().unwrap();
-            if let Err(e) = tray_icon.set_volume_icon_level(volume) {
-                e.log_and_exit();
+            if let Some(icon) = TRAY_ICON.lock().unwrap().as_mut() {
+                icon.volume = volume;
+                if let Err(e) = icon.set_volume_icon_level(volume, icon.muted) {
+                    e.log_and_exit();
+                }
             }
         });
     }
 
-    fn set_volume_icon_level(&mut self, volume: f32) -> Result<(), Exception> {
-        let new_lvl = VolumeLevel::from_volume(volume);
+    fn set_volume_icon_level(&mut self, volume: f32, muted: bool) -> Result<(), Exception> {
+        let new_lvl = VolumeLevel::from_volume(volume, muted);
         if self.level == new_lvl {
             return Ok(());
         }
@@ -92,7 +101,6 @@ impl TrayIcon {
         unsafe {
             gtk_status_icon_get_geometry(self.icon_ptr, std::ptr::null_mut(), area_ptr, orient_ptr);
         }
-
     }
 
     pub fn get_geometry(&mut self) -> (GdkRectangle, GtkOrientation) {
@@ -105,13 +113,11 @@ impl TrayIcon {
         Popout::pub_set_geometry(area, ori);
     }
 
-    pub fn check_if_shows_muted(output: &shared_output_list::Output) {
-        if is_default_output(&output.id) {
-            if output.muted {
-                TrayIcon::set_volume(0.);
-            } else {
-                TrayIcon::set_volume(output.volume);
-            }
+    pub fn set_muted(muted: bool) {
+        if let Some(icon) = TRAY_ICON.lock().unwrap().as_mut() {
+            icon.muted = muted;
+            let vol = icon.volume;
+            TrayIcon::set_volume(vol);
         }
     }
 
@@ -126,6 +132,8 @@ impl TrayIcon {
             },
             orientation: 0,
             level: VolumeLevel::High,
+            volume: 0.,
+            muted: false,
         };
         tray_icon.create_icon("Volume");
         TRAY_ICON.lock().unwrap().replace(tray_icon);
@@ -141,15 +149,17 @@ enum VolumeLevel {
 }
 
 impl VolumeLevel {
-    fn from_volume(volume: f32) -> VolumeLevel {
+    fn from_volume(volume: f32, muted: bool) -> VolumeLevel {
+        if muted {
+            return VolumeLevel::Muted;
+        }
+
         if volume > 66. {
             VolumeLevel::High
         } else if volume > 33. {
             VolumeLevel::Medium
-        } else if volume > 0.0 {
-            VolumeLevel::Low
         } else {
-            VolumeLevel::Muted
+            VolumeLevel::Low
         }
     }
 
@@ -173,7 +183,7 @@ unsafe fn g_signal_connect(
     instance: gpointer,
     detailed_signal: *const i8,
     c_handler: GCallback,
-    data: gpointer,
+    data: gpointer
 ) -> u64 {
     g_signal_connect_data(
         instance as *mut GObject,
@@ -181,7 +191,7 @@ unsafe fn g_signal_connect(
         c_handler,
         data,
         None,
-        std::mem::transmute(0),
+        std::mem::transmute(0)
     )
 }
 

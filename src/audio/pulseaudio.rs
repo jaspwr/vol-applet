@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ffi::c_void, sync::Mutex};
 
-use super::{shared_output_list::is_default_output, Audio};
+use super::Audio;
 use crate::{
     audio::{
         reload_outputs_in_popout,
@@ -267,15 +267,16 @@ fn sink_change_subscription_event_handler(outputs: Vec<shared_output_list::Outpu
                 old_outputs[i].volume = output.volume;
                 Popout::set_specific_volume(output.id.clone(), output.volume);
 
-                if is_default_output(&output.id) {
+                if output.is_default() {
                     TrayIcon::set_volume(output.volume);
                 }
             }
             if output.muted != old_outputs[i].muted {
                 old_outputs[i].muted = output.muted;
                 Popout::set_specific_muted(output.id.clone(), output.muted);
-
-                TrayIcon::check_if_shows_muted(output);
+                if output.is_default() {
+                    TrayIcon::set_muted(output.muted);
+                }
             }
         }
     }

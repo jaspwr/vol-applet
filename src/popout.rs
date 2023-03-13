@@ -9,7 +9,7 @@ use gtk::traits::{ ContainerExt, GtkWindowExt, WidgetExt };
 use gtk::{ Application, ApplicationWindow, Inhibit };
 
 use crate::audio::reload_outputs_in_popout;
-use crate::audio::shared_output_list::{ self, is_default_output };
+use crate::audio::shared_output_list;
 use crate::elements::VolumeSlider;
 use crate::exception::Exception;
 use crate::tray_icon::TrayIcon;
@@ -52,11 +52,8 @@ impl Popout {
             .build();
 
         win.connect_key_press_event(|_, e: &EventKey| -> Inhibit {
-            match e.keycode() {
-                Some(keycode) => {
-                    handle_keycode(keycode);
-                },
-                None => {},
+            if let Some(keycode) = e.keycode() {
+                handle_keycode(keycode);
             }
             gtk::Inhibit(false)
         });
@@ -75,11 +72,8 @@ impl Popout {
         popout.add_hide_on_loose_focus();
 
         popout.win.connect_check_resize(|_| {
-            match POPOUT.try_lock() {
-                Ok(mut mutex) => {
-                    mutex.as_mut().unwrap().fix_window_position();
-                },
-                Err(_) => {}
+            if let Ok(mut mutex) = POPOUT.try_lock() {
+                mutex.as_mut().unwrap().fix_window_position();
             }
         });
 
@@ -182,6 +176,7 @@ impl Popout {
 
         if let Ok(output) = shared_output_list::get_default_output() {
             TrayIcon::set_volume(output.volume);
+            TrayIcon::set_muted(output.muted);
         }
     }
 
@@ -243,11 +238,8 @@ impl Popout {
 fn handle_keycode(keycode: u16) {
     const ESC: u16 = 9;
     if keycode == ESC {
-        match POPOUT.try_lock() {
-            Ok(mut mutex) => {
-                mutex.as_mut().unwrap().hide()
-            },
-            Err(_) => {}
+        if let Ok(mut mutex) = POPOUT.try_lock() {
+            mutex.as_mut().unwrap().hide()
         }
     }
 }
@@ -256,10 +248,10 @@ fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
     let outputs = audio::shared_output_list::get_output_list();
     popout.sliders = HashMap::new();
     for output in outputs {
-        let id = output.id.clone();
+        let is_default = output.is_default();
         popout.sliders.insert(
             output.id.clone(),
-            Box::new(popout.append_volume_slider(&container, output, is_default_output(&id)))
+            Box::new(popout.append_volume_slider(&container, output, is_default))
         );
     }
 }
@@ -287,9 +279,9 @@ fn handle_mute_button(id: String) {
         if output.id == id {
             muted = !output.muted;
             output.muted = muted;
-
-            TrayIcon::check_if_shows_muted(output);
-
+            if output.is_default() {
+                TrayIcon::set_muted(muted);
+            }
             break;
         }
     }
