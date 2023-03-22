@@ -263,12 +263,24 @@ fn remove_child_widgets(popout: &mut Popout) {
 }
 
 fn handle_volume_slider_change(is_default: bool, vol: f32, id: String) {
+    let vol = clamp_volume_to_percent(vol);
+
     if is_default {
         TrayIcon::set_volume(vol);
     }
     Popout::set_ignore_next_callback();
 
     AUDIO.lock().unwrap().aud.set_volume(id, vol);
+}
+
+fn clamp_volume_to_percent(vol: f32) -> f32 {
+    if vol > 100. {
+        100.
+    } else if vol < 0. {
+        0.
+    } else {
+        vol
+    }
 }
 
 fn handle_mute_button(id: String) {
