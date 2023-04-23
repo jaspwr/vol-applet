@@ -35,14 +35,14 @@ impl Popout {
             .default_width(320)
             .default_height(50)
             .title("Volume")
+            .type_hint(gtk::gdk::WindowTypeHint::PopupMenu)
+            .decorated(false)
+            .resizable(false)
             .build();
 
-        win.set_decorated(false);
         win.set_keep_above(true);
         win.set_skip_pager_hint(true);
         win.set_skip_taskbar_hint(true);
-        win.set_type_hint(gtk::gdk::WindowTypeHint::PopupMenu);
-        win.set_resizable(false);
 
         let container = gtk::builders::BoxBuilder
             ::new()
@@ -146,6 +146,14 @@ impl Popout {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
             popout.sliders.get(&output_id).unwrap().set_volume_slider(volume);
+        });
+    }
+
+    pub fn set_specific_volume_label(output_id: String, volume: f32) {
+        idle_add_once(move || {
+            let mut a = POPOUT.lock().unwrap();
+            let popout = a.as_mut().unwrap();
+            popout.sliders.get(&output_id).unwrap().set_volume_label(volume);
         });
     }
 
@@ -264,6 +272,12 @@ fn remove_child_widgets(popout: &mut Popout) {
 
 fn handle_volume_slider_change(is_default: bool, vol: f32, id: String) {
     let vol = clamp_volume_to_percent(vol);
+
+    if (vol - shared_output_list::get_stored_volume(&id)).abs() < 2. {
+        return;
+    }
+
+    Popout::set_specific_volume_label(id.clone(), vol);
 
     if is_default {
         TrayIcon::set_volume(vol);

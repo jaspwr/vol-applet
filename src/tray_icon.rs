@@ -10,7 +10,7 @@ use gtk::{
 };
 use gtk_sys::*;
 
-use crate::{ exception::Exception, popout::Popout, audio::{ Audio, shared_output_list }, AUDIO };
+use crate::{ exception::Exception, popout::Popout, audio::shared_output_list, AUDIO };
 
 static TRAY_ICON: Mutex<Option<TrayIcon>> = Mutex::new(None);
 

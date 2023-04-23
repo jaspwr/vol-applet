@@ -44,3 +44,14 @@ pub fn get_default_output() -> Result<Output, Exception> {
     }
     Err(Exception::Misc("No default output found".to_string()))
 }
+
+pub fn get_stored_volume(output_id: &String) -> f32 {
+    let output_list = OUTPUT_LIST.lock().unwrap();
+
+    for output in output_list.iter() {
+        if output.id == *output_id {
+            return output.volume;
+        }
+    }
+    0.
+}
