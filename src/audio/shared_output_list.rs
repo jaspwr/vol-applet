@@ -55,3 +55,43 @@ pub fn get_stored_volume(output_id: &String) -> f32 {
     }
     0.
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_list() {
+        let mut list = OUTPUT_LIST.lock().unwrap();
+        list.push(Output {
+            name: "Headphones".to_string(),
+            volume: 23.0,
+            muted: false,
+            id: "1".to_string(),
+        });
+        list.push(Output {
+            name: "Speakers".to_string(),
+            volume: 77.0,
+            muted: true,
+            id: "2".to_string(),
+        });
+        list.push(Output {
+            name: "Microphone".to_string(),
+            volume: 22.0,
+            muted: false,
+            id: "3".to_string(),
+        });
+        drop(list);
+
+        assert!(get_output_list().len() == 3);
+
+        set_default_output("2".to_string());
+
+        let default = get_default_output().unwrap();
+        assert!(default.is_default());
+        assert_eq!(default.name, "Speakers");
+        assert_eq!(default.volume, 77.0);
+        assert_eq!(default.muted, true);
+        assert_eq!(default.id, "2");
+    }
+}

@@ -1,5 +1,6 @@
 use owo_colors::OwoColorize;
 
+#[derive(Debug)]
 pub enum Exception {
     Misc(String),
 }
