@@ -13,6 +13,15 @@ pub struct Output {
     pub volume: f32,
     pub muted: bool,
     pub id: String,
+    pub pa_index: Option<u32>,
+    pub type_: VolumeType,
+}
+
+#[derive(Clone)]
+pub enum VolumeType {
+    Sink,
+    Stream,
+    Input,
 }
 
 pub fn get_output_list() -> Vec<Output> {
@@ -32,6 +41,28 @@ impl Output {
 
 pub fn set_default_output(output_id: String) {
     *DEFAULT_OUTPUT_ID.lock().unwrap() = output_id;
+}
+
+pub fn get_pa_index(output_id: &String) -> Option<u32> {
+    let output_list = OUTPUT_LIST.lock().unwrap();
+
+    for output in output_list.iter() {
+        if output.id == *output_id {
+            return output.pa_index;
+        }
+    }
+    None
+}
+
+pub fn type_of(output_id: &String) -> VolumeType {
+    let output_list = OUTPUT_LIST.lock().unwrap();
+
+    for output in output_list.iter() {
+        if output.id == *output_id {
+            return output.type_.clone();
+        }
+    }
+    VolumeType::Sink
 }
 
 pub fn get_default_output() -> Result<Output, Exception> {
@@ -68,18 +99,24 @@ mod tests {
             volume: 23.0,
             muted: false,
             id: "1".to_string(),
+            pa_index: None,
+            type_: VolumeType::Sink,
         });
         list.push(Output {
             name: "Speakers".to_string(),
             volume: 77.0,
             muted: true,
             id: "2".to_string(),
+            pa_index: None,
+            type_: VolumeType::Sink,
         });
         list.push(Output {
             name: "Microphone".to_string(),
             volume: 22.0,
             muted: false,
             id: "3".to_string(),
+            pa_index: None,
+            type_: VolumeType::Input,
         });
         drop(list);
 

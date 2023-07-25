@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use crate::popout::Popout;
 
+use self::shared_output_list::VolumeType;
+
 mod pipewire;
 mod pulseaudio;
 pub mod shared_output_list;
@@ -26,8 +28,8 @@ pub fn reload_outputs_in_popout(outputs: Vec<shared_output_list::Output>) {
 
 pub trait Audio {
     fn get_outputs(&self, after: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>);
-    fn set_volume(&self, sink_id: String, volume: f32);
-    fn set_muted(&self, sink_id: String, muted: bool);
+    fn set_volume(&self, sink_id: String, volume: f32, type_: VolumeType);
+    fn set_muted(&self, sink_id: String, muted: bool, type_: VolumeType);
 
     fn cleanup(&mut self) {}
 }

@@ -20,8 +20,19 @@ cargo build --release
 The binary will be located at `target/release/volapplet`.
 
 ## Usage
+Basic usage:
 ```bash
 volapplet & disown
+```
+Additional functionality can be enabled with arguments:
+* `-i` or `--show-inputs`: Add volume controls for inputs.
+* `-s` or `--show-streams`: Add volume controls for streams.
+* `-d` or `--dont-group`: Don't group controls for inputs and streams into expandable categories.
+* `-c` or `--show-icons`: Add icons to each volume control.
+
+Example usage with additional features:
+```bash
+volapplet -isc & disown
 ```
 
 ## Dependencies

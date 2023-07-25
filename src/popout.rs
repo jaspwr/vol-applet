@@ -2,16 +2,17 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use gtk::gdk::{ SeatCapabilities, EventKey };
+use gtk::gdk::{EventKey, SeatCapabilities};
 use gtk::glib::idle_add_once;
-use gtk::traits::{ ContainerExt, WidgetExt, GtkWindowExt };
-use gtk::{ Application, ApplicationWindow, Inhibit };
+use gtk::traits::{ContainerExt, GtkWindowExt, WidgetExt};
+use gtk::{Application, ApplicationWindow, Inhibit};
 
 use crate::audio::reload_outputs_in_popout;
-use crate::audio::shared_output_list;
+use crate::audio::shared_output_list::{self, VolumeType};
 use crate::elements::VolumeSlider;
+use crate::options::OPTIONS;
 use crate::tray_icon::TrayIcon;
-use crate::{ audio, AUDIO };
+use crate::{audio, AUDIO};
 
 static POPOUT: Mutex<Option<Popout>> = Mutex::new(None);
 
@@ -36,8 +37,7 @@ impl Popout {
             .resizable(false)
             .build();
 
-        let container = gtk::Box
-            ::builder()
+        let container = gtk::Box::builder()
             .margin(10)
             .spacing(6)
             .orientation(gtk::Orientation::Vertical)
@@ -147,7 +147,11 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout.sliders.get(&output_id).unwrap().set_volume_slider(volume);
+            popout
+                .sliders
+                .get(&output_id)
+                .unwrap()
+                .set_volume_slider(volume);
         });
     }
 
@@ -155,7 +159,11 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout.sliders.get(&output_id).unwrap().set_volume_label(volume);
+            popout
+                .sliders
+                .get(&output_id)
+                .unwrap()
+                .set_volume_label(volume);
         });
     }
 
@@ -190,13 +198,14 @@ impl Popout {
         &self,
         container: &gtk::Box,
         output: audio::shared_output_list::Output,
-        is_default: bool
+        is_default: bool,
     ) -> VolumeSlider {
         let id = output.id.clone();
         let id_ = output.id.clone();
         VolumeSlider::new(
             container,
             Some(output.name),
+            output.type_,
             output.volume,
             output.muted,
             Rc::new(move |vol: f32| {
@@ -204,24 +213,22 @@ impl Popout {
             }),
             Rc::new(move || {
                 handle_mute_button(id_.clone());
-            })
+            }),
         )
     }
 
     pub fn show() {
-        AUDIO.lock()
-            .unwrap()
-            .aud.get_outputs(
-                Box::new(|outputs: Vec<shared_output_list::Output>| {
-                    reload_outputs_in_popout(outputs);
-                })
-            );
+        AUDIO.lock().unwrap().aud.get_outputs(Box::new(
+            |outputs: Vec<shared_output_list::Output>| {
+                reload_outputs_in_popout(outputs);
+            },
+        ));
 
         let mut a = POPOUT.lock().unwrap();
         let popout = a.as_mut().unwrap();
 
         popout.popout_menu.show();
-        popout.popout_menu.present();
+        // popout.popout_menu.present();
         popout.set_geomerty();
     }
 
@@ -238,16 +245,70 @@ fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
     popout.sliders = HashMap::new();
 
     if outputs.is_empty() {
-        popout.container.add(&gtk::Label::builder().label("No outputs found").build());
+        popout
+            .container
+            .add(&gtk::Label::builder().label("No devices found.").build());
         return;
     }
 
+    if OPTIONS.dont_group {
+        for output in outputs {
+            let is_default = output.is_default();
+            popout.sliders.insert(
+                output.id.clone(),
+                Box::new(popout.append_volume_slider(&container, output, is_default)),
+            );
+        }
+    } else {
+        create_grouped(outputs, popout, container);
+    }
+}
+
+fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout, container: gtk::Box) {
+    let inputs = gtk::Expander::builder().label("Inputs").build();
+
+    let inputs_container = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .margin_top(10)
+        .build();
+
+    inputs.add(&inputs_container);
+
+    let streams = gtk::Expander::builder().label("Streams").build();
+
+    let streams_container = gtk::Box::builder()
+        .orientation(gtk::Orientation::Vertical)
+        .margin_top(10)
+        .build();
+
+    streams.add(&streams_container);
+
     for output in outputs {
         let is_default = output.is_default();
-        popout.sliders.insert(
-            output.id.clone(),
-            Box::new(popout.append_volume_slider(&container, output, is_default))
-        );
+
+        let id = output.id.clone();
+
+        let slider = Box::new(match output.type_ {
+            VolumeType::Sink => {
+                popout.append_volume_slider(&container, output, is_default)
+            }
+            VolumeType::Stream => {
+                popout.append_volume_slider(&streams_container, output, is_default)
+            }
+            VolumeType::Input => {
+                popout.append_volume_slider(&inputs_container, output, is_default)
+            }
+        });
+
+        popout.sliders.insert(id, slider);
+    }
+
+    if OPTIONS.show_inputs {
+        popout.container.add(&inputs);
+    }
+
+    if OPTIONS.show_streams {
+        popout.container.add(&streams);
     }
 }
 
@@ -271,29 +332,42 @@ fn handle_volume_slider_change(is_default: bool, vol: f32, id: String) {
     }
     Popout::set_ignore_next_callback();
 
-    AUDIO.lock().unwrap().aud.set_volume(id, vol);
+    let type_ = shared_output_list::type_of(&id);
+    AUDIO.lock().unwrap().aud.set_volume(id, vol, type_);
 }
 
 fn clamp_volume_to_percent(vol: f32) -> f32 {
-    if vol > 100. { 100. } else if vol < 0. { 0. } else { vol }
+    if vol > 100. {
+        100.
+    } else if vol < 0. {
+        0.
+    } else {
+        vol
+    }
 }
 
 fn handle_mute_button(id: String) {
-    let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
+    let type_ = shared_output_list::type_of(&id);
+
     let mut muted = false;
-    Popout::set_ignore_next_callback();
-    for output in list.iter_mut() {
-        if output.id == id {
-            muted = !output.muted;
-            output.muted = muted;
-            if output.is_default() {
-                TrayIcon::set_muted(muted);
+    {
+        let mut list = shared_output_list::OUTPUT_LIST.lock().unwrap();
+        Popout::set_ignore_next_callback();
+        for output in list.iter_mut() {
+            if output.id == id {
+                muted = !output.muted;
+                output.muted = muted;
+                if output.is_default() {
+                    TrayIcon::set_muted(muted);
+                }
+                break;
             }
-            break;
         }
     }
+
     Popout::set_specific_muted(id.clone(), muted);
-    AUDIO.lock().unwrap().aud.set_muted(id, muted);
+
+    AUDIO.lock().unwrap().aud.set_muted(id, muted, type_);
 }
 
 fn grab_seat(popout: &gtk::gdk::Window) {
@@ -304,13 +378,11 @@ fn grab_seat(popout: &gtk::gdk::Window) {
 
     let status = seat.grab(
         popout,
-        unsafe {
-            SeatCapabilities::from_bits_unchecked(capabilities)
-        },
+        unsafe { SeatCapabilities::from_bits_unchecked(capabilities) },
         true,
         None,
         None,
-        None
+        None,
     );
 
     if status != gtk::gdk::GrabStatus::Success {

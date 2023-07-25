@@ -1,4 +1,4 @@
-use super::{shared_output_list, Audio};
+use super::{shared_output_list::{self, VolumeType}, Audio};
 
 struct Pipewire {}
 
@@ -8,11 +8,11 @@ impl Audio for Pipewire {
         todo!()
     }
 
-    fn set_volume(&self, sink_id: String, volume: f32) {
+    fn set_volume(&self, sink_id: String, volume: f32, type_: VolumeType) {
         todo!()
     }
 
-    fn set_muted(&self, sink_id: String, muted: bool) {
+    fn set_muted(&self, sink_id: String, muted: bool, type_: VolumeType) {
         todo!()
     }
 }

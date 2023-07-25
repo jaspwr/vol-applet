@@ -10,6 +10,7 @@ mod elements;
 mod exception;
 mod popout;
 mod tray_icon;
+pub mod options;
 
 use gtk::prelude::*;
 use once_cell::sync::Lazy;
@@ -35,5 +36,5 @@ pub fn run() {
         TrayIcon::initialise();
     });
 
-    app.run();
+    app.run_with_args(&["vol-applet"]);
 }

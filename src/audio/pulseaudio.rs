@@ -1,12 +1,17 @@
-use std::{collections::HashMap, ffi::c_void, sync::Mutex};
+use std::{
+    collections::HashMap,
+    ffi::{c_char, c_void},
+    sync::{Arc, Mutex},
+};
 
-use super::Audio;
+use super::{shared_output_list::VolumeType, Audio};
 use crate::{
     audio::{
-        reload_outputs_in_popout,
-        shared_output_list::{self, set_default_output}, get_audio,
+        get_audio, reload_outputs_in_popout,
+        shared_output_list::{self, set_default_output},
     },
     exception::Exception,
+    options::OPTIONS,
     popout::Popout,
     tray_icon::TrayIcon,
     AUDIO,
@@ -26,11 +31,13 @@ pub struct Pulse {
     mainloop: *mut pa_threaded_mainloop,
 }
 
+static NAME: &[u8] = b"volapplet\0";
+
 impl Pulse {
     pub fn new() -> Pulse {
         let mainloop = unsafe { pa_threaded_mainloop_new() };
         let mainloop_api = unsafe { pa_threaded_mainloop_get_api(mainloop) };
-        let context = unsafe { pa_context_new(mainloop_api, std::ptr::null()) };
+        let context = unsafe { pa_context_new(mainloop_api, NAME.as_ptr() as *const c_char) };
 
         unsafe {
             pa_context_connect(context, std::ptr::null(), 0, std::ptr::null_mut());
@@ -47,17 +54,24 @@ impl Pulse {
 
     fn get_server_info(&self) {
         unsafe {
-            pa_context_get_server_info(
+            let op = pa_context_get_server_info(
                 self.context,
                 Some(server_info_callback),
                 std::ptr::null_mut(),
             );
+
+            if op.is_null() {
+                Exception::Misc("Failed to get PA server info.".to_string()).log_and_ignore();
+            }
+
+            pa_operation_unref(op);
         }
     }
 }
 
 struct GetSinkListUserdata {
-    final_callback: Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>,
+    final_callback: Mutex<Box<dyn Fn(Vec<shared_output_list::Output>) + 'static>>,
+    unfinished_callbacks: Mutex<u32>,
     call_id: u32,
     list: Mutex<Vec<shared_output_list::Output>>,
 }
@@ -68,47 +82,150 @@ impl Audio for Pulse {
 
         *GET_SINKS_CALLBACK_ID.lock().unwrap() += 1;
 
-        let userdata = Box::new(GetSinkListUserdata {
-            final_callback: after,
+        let mut unfinished_callbacks: u32 = 1;
+
+        if OPTIONS.show_inputs {
+            unfinished_callbacks += 1;
+        }
+
+        if OPTIONS.show_streams {
+            unfinished_callbacks += 1;
+        }
+
+        let userdata = Arc::new(GetSinkListUserdata {
+            final_callback: Mutex::new(after),
+            unfinished_callbacks: Mutex::new(unfinished_callbacks),
             call_id: *GET_SINKS_CALLBACK_ID.lock().unwrap(),
             list: Mutex::new(vec![]),
         });
 
         unsafe {
-            pa_context_get_sink_info_list(
+            let op = pa_context_get_sink_info_list(
                 self.context,
                 Some(sink_info_callback),
-                Box::into_raw(userdata) as *mut c_void,
+                Arc::into_raw(userdata.clone()) as *mut c_void,
             );
+
+            pa_operation_unref(op);
+
+            if OPTIONS.show_inputs {
+                let op = pa_context_get_source_info_list(
+                    self.context,
+                    Some(source_info_callback),
+                    Arc::into_raw(userdata.clone()) as *mut c_void,
+                );
+
+                if op.is_null() {
+                    Exception::Misc("Failed to get source list.".to_string()).log_and_ignore();
+                }
+
+                pa_operation_unref(op);
+            }
+
+            if OPTIONS.show_streams {
+                let op = pa_context_get_sink_input_info_list(
+                    self.context,
+                    Some(sink_input_info_callback),
+                    Arc::into_raw(userdata) as *mut c_void,
+                );
+
+                if op.is_null() {
+                    Exception::Misc("Failed to get sink input list.".to_string()).log_and_ignore();
+                }
+
+                pa_operation_unref(op);
+            }
         }
     }
 
-    fn set_volume(&self, sink_id: String, volume: f32) {
+    fn set_volume(&self, sink_id: String, volume: f32, type_: VolumeType) {
+        let volume = clamp_volume(volume);
+
         unsafe {
+            pa_threaded_mainloop_lock(self.mainloop);
+
             let cvol = **PA_CVOLUMES.lock().unwrap().get(&sink_id).unwrap();
             let cvol_ptr = &cvol as *const pa_cvolume as *mut pa_cvolume;
 
             pa_cvolume_set(cvol_ptr, cvol.channels as u32, (volume * 1000.) as u32);
 
-            pa_context_set_sink_volume_by_name(
-                self.context,
-                sink_id.as_ptr() as *const i8,
-                cvol_ptr,
-                None,
-                std::ptr::null_mut(),
-            );
+            let op = match type_ {
+                VolumeType::Sink => pa_context_set_sink_volume_by_name(
+                    self.context,
+                    sink_id.as_ptr() as *const i8,
+                    cvol_ptr,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Input => pa_context_set_source_volume_by_name(
+                    self.context,
+                    sink_id.as_ptr() as *const i8,
+                    cvol_ptr,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Stream => {
+                    let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
+
+                    pa_context_set_sink_input_volume(
+                        self.context,
+                        idx,
+                        cvol_ptr,
+                        None,
+                        std::ptr::null_mut(),
+                    )
+                }
+            };
+
+            if op.is_null() {
+                Exception::Misc("Failed to get PA server info.".to_string()).log_and_ignore();
+            }
+
+            pa_operation_unref(op);
+
+            pa_threaded_mainloop_unlock(self.mainloop);
         }
     }
 
-    fn set_muted(&self, sink_id: String, muted: bool) {
+    fn set_muted(&self, sink_id: String, muted: bool, type_: VolumeType) {
         unsafe {
-            pa_context_set_sink_mute_by_name(
-                self.context,
-                sink_id.as_ptr() as *const i8,
-                muted as i32,
-                None,
-                std::ptr::null_mut(),
-            );
+            pa_threaded_mainloop_lock(self.mainloop);
+
+            let op = match type_ {
+                VolumeType::Sink => pa_context_set_sink_mute_by_name(
+                    self.context,
+                    sink_id.as_ptr() as *const i8,
+                    muted as i32,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Input => pa_context_set_source_mute_by_name(
+                    self.context,
+                    sink_id.as_ptr() as *const i8,
+                    muted as i32,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Stream => {
+                    let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
+
+                    pa_context_set_sink_input_mute(
+                        self.context,
+                        idx,
+                        muted as i32,
+                        None,
+                        std::ptr::null_mut(),
+                    )
+                }
+            };
+
+            if op.is_null() {
+                Exception::Misc("Failed to set muted.".to_string()).log_and_ignore();
+            }
+
+            pa_operation_unref(op);
+
+            pa_threaded_mainloop_unlock(self.mainloop);
         }
     }
 
@@ -116,8 +233,9 @@ impl Audio for Pulse {
         unsafe {
             pa_context_disconnect(self.context);
             pa_context_unref(self.context);
-            // pa_threaded_mainloop_stop(self.mainloop);
-            // pa_threaded_mainloop_free(self.mainloop);
+
+            pa_threaded_mainloop_stop(self.mainloop);
+            pa_threaded_mainloop_free(self.mainloop);
         }
     }
 }
@@ -129,12 +247,12 @@ extern "C" fn sink_info_callback(
     eol: i32,
     userdata: *mut c_void,
 ) {
-    let mut userdata = unsafe { Box::from_raw(userdata as *mut GetSinkListUserdata) };
+    let userdata = unsafe { Arc::from_raw(userdata as *mut GetSinkListUserdata) };
 
     if userdata.call_id != *GET_SINKS_CALLBACK_ID.lock().unwrap() {
         if eol == 0 {
             // Leak userdata again
-            Box::into_raw(userdata);
+            let _ = Arc::into_raw(userdata);
         }
         return;
     }
@@ -165,22 +283,199 @@ extern "C" fn sink_info_callback(
             (pa_cvolume_avg(&v) as f32) / 1000.
         };
 
-        {
-            let mut list = userdata.list.lock().unwrap();
-            list.push(shared_output_list::Output {
-                name,
-                volume,
-                muted,
-                id: output_id,
-            });
-        }
+        let pa_index = unsafe { (*sink_info_ptr).index };
+
+        update_list(
+            &userdata,
+            name,
+            volume,
+            muted,
+            output_id,
+            pa_index,
+            VolumeType::Sink,
+        );
         // Leak userdata again
-        Box::into_raw(userdata);
+        let _ = Arc::into_raw(userdata);
     } else {
         // End of input
-        let vec = userdata.list.lock().unwrap();
-        userdata.final_callback.as_mut()(vec.to_vec());
+        try_finish_callback(userdata);
     }
+}
+
+fn try_finish_callback(userdata: Arc<GetSinkListUserdata>) {
+    let vec = userdata.list.lock().unwrap();
+    let mut unfinished_callbacks = userdata.unfinished_callbacks.lock().unwrap();
+    *unfinished_callbacks -= 1;
+    if *unfinished_callbacks == 0 {
+        userdata.final_callback.lock().unwrap()(vec.to_vec());
+    }
+}
+
+#[derive(PartialEq)]
+enum SourceType {
+    Hardware,
+    Virtual,
+    Monitor,
+}
+
+#[no_mangle]
+extern "C" fn source_info_callback(
+    _: *mut pa_context,
+    source_info: *const pa_source_info,
+    eol: i32,
+    userdata: *mut c_void,
+) {
+    let userdata = unsafe { Arc::from_raw(userdata as *mut GetSinkListUserdata) };
+
+    if userdata.call_id != *GET_SINKS_CALLBACK_ID.lock().unwrap() {
+        if eol == 0 {
+            // Leak userdata again
+            let _ = Arc::into_raw(userdata);
+        }
+        return;
+    }
+
+    if eol == 0 {
+        let source_info_ptr = source_info as *mut pa_source_info;
+
+        let source_type = if PA_INVALID_INDEX != unsafe { (*source_info_ptr).monitor_of_sink } {
+            SourceType::Monitor
+        } else {
+            if unsafe { (*source_info_ptr).flags } & PA_SOURCE_HARDWARE != 0 {
+                SourceType::Hardware
+            } else {
+                SourceType::Virtual
+            }
+        };
+
+        if source_type == SourceType::Monitor {
+            // Leak userdata again
+            let _ = Arc::into_raw(userdata);
+            return;
+        }
+
+        let output_id = unsafe {
+            let name_ptr = (*source_info_ptr).name;
+            let name = std::ffi::CStr::from_ptr(name_ptr);
+            name.to_string_lossy().to_string()
+        };
+
+        let name = unsafe {
+            let desc_ptr = (*source_info_ptr).description;
+            let desc = std::ffi::CStr::from_ptr(desc_ptr);
+            desc.to_string_lossy().to_string()
+        };
+
+        let muted = unsafe { (*source_info_ptr).mute != 0 };
+
+        let volume: f32 = unsafe {
+            let v = (*source_info_ptr).volume;
+            PA_CVOLUMES
+                .lock()
+                .unwrap()
+                .insert(output_id.clone(), Box::new(v));
+            (pa_cvolume_avg(&v) as f32) / 1000.
+        };
+
+        let pa_index = unsafe { (*source_info_ptr).index };
+
+        update_list(
+            &userdata,
+            name,
+            volume,
+            muted,
+            output_id,
+            pa_index,
+            VolumeType::Input,
+        );
+        // Leak userdata again
+        let _ = Arc::into_raw(userdata);
+    } else {
+        // End of input
+        try_finish_callback(userdata);
+    }
+}
+
+#[no_mangle]
+extern "C" fn sink_input_info_callback(
+    _: *mut pa_context,
+    sink_info: *const pa_sink_input_info,
+    eol: i32,
+    userdata: *mut c_void,
+) {
+    let userdata = unsafe { Arc::from_raw(userdata as *mut GetSinkListUserdata) };
+
+    if userdata.call_id != *GET_SINKS_CALLBACK_ID.lock().unwrap() {
+        if eol == 0 {
+            // Leak userdata again
+            let _ = Arc::into_raw(userdata);
+        }
+        return;
+    }
+
+    if eol == 0 {
+        let sink_info_ptr = sink_info as *mut pa_sink_input_info;
+
+        let output_id = unsafe {
+            let name_ptr = (*sink_info_ptr).name;
+            let name = std::ffi::CStr::from_ptr(name_ptr);
+            name.to_string_lossy().to_string()
+        };
+
+        let name = unsafe {
+            let desc_ptr = (*sink_info_ptr).name;
+            let desc = std::ffi::CStr::from_ptr(desc_ptr);
+            desc.to_string_lossy().to_string()
+        };
+
+        let muted = unsafe { (*sink_info_ptr).mute != 0 };
+
+        let volume: f32 = unsafe {
+            let v = (*sink_info_ptr).volume;
+            PA_CVOLUMES
+                .lock()
+                .unwrap()
+                .insert(output_id.clone(), Box::new(v));
+            (pa_cvolume_avg(&v) as f32) / 1000.
+        };
+
+        let pa_index = unsafe { (*sink_info_ptr).index };
+
+        update_list(
+            &userdata,
+            name,
+            volume,
+            muted,
+            output_id,
+            pa_index,
+            VolumeType::Stream,
+        );
+        // Leak userdata again
+        let _ = Arc::into_raw(userdata);
+    } else {
+        // End of input
+        try_finish_callback(userdata);
+    }
+}
+
+fn update_list(
+    userdata: &Arc<GetSinkListUserdata>,
+    name: String,
+    volume: f32,
+    muted: bool,
+    output_id: String,
+    pa_index: u32,
+    type_: VolumeType,
+) {
+    let mut list = userdata.list.lock().unwrap();
+    list.push(shared_output_list::Output {
+        name,
+        volume,
+        muted,
+        id: output_id,
+        pa_index: Some(pa_index),
+        type_,
+    });
 }
 
 #[no_mangle]
@@ -195,30 +490,40 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
                 std::ptr::null_mut(),
             );
 
-            let o = pa_context_subscribe(
+            let mut flags = PA_SUBSCRIPTION_MASK_SINK;
+
+            if OPTIONS.show_icons {
+                flags |= PA_SUBSCRIPTION_MASK_SINK_INPUT;
+            }
+
+            if OPTIONS.show_inputs {
+                flags |= PA_SUBSCRIPTION_MASK_SOURCE;
+            }
+
+            let op = pa_context_subscribe(
                 context,
-                PA_SUBSCRIPTION_MASK_SINK,
+                flags,
                 None,
                 std::ptr::null_mut(),
             );
-            if o.is_null() {
+            if op.is_null() {
                 Exception::Misc("PulseAudio context subscription failed".to_string())
                     .log_and_ignore();
             }
-            pa_operation_unref(o);
+            pa_operation_unref(op);
 
             AUDIO.lock().unwrap().aud.get_outputs(Box::new(
                 |outputs: Vec<shared_output_list::Output>| {
                     reload_outputs_in_popout(outputs);
                 },
             ));
-
-            // pa_threaded_mainloop_signal(mainloop, 0);
         } else if state == PA_CONTEXT_FAILED {
-            Exception::Misc("Failed to connect to PulseAudio (PA_CONTEXT_FAILED).".to_string()).log_and_ignore();
+            Exception::Misc("Failed to connect to PulseAudio (PA_CONTEXT_FAILED).".to_string())
+                .log_and_ignore();
             retry_connection_loop();
         } else if state == PA_CONTEXT_TERMINATED {
-            Exception::Misc("Disconnected from PulseAudio (PA_CONTEXT_TERMINATED)".to_string()).log_and_ignore();
+            Exception::Misc("Disconnected from PulseAudio (PA_CONTEXT_TERMINATED)".to_string())
+                .log_and_ignore();
             retry_connection_loop();
         }
     }
@@ -231,7 +536,12 @@ pub extern "C" fn subscribe_callback(
     _: u32,
     _: *mut c_void,
 ) {
-    if (event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK {
+    let event_type = event_type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+
+    if event_type == PA_SUBSCRIPTION_EVENT_SINK
+        || event_type == PA_SUBSCRIPTION_EVENT_SINK_INPUT
+        || event_type == PA_SUBSCRIPTION_EVENT_SOURCE
+    {
         Popout::handle_callback(|_| {
             AUDIO.lock().unwrap().aud.get_outputs(Box::new(
                 |outputs: Vec<shared_output_list::Output>| {
@@ -303,5 +613,15 @@ fn retry_connection_loop() {
 impl Drop for Pulse {
     fn drop(&mut self) {
         self.cleanup();
+    }
+}
+
+fn clamp_volume(vol: f32) -> f32 {
+    if vol > 100. {
+        100.
+    } else if vol < 0. {
+        0.
+    } else {
+        vol
     }
 }
