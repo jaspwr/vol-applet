@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn options() {
-        let args = vec!["-i".to_string(), "-so".to_string(), "--use-categories".to_string()];
+        let args = vec!["-i".to_string(), "-sc".to_string(), "--dont-group".to_string()];
         let options = Options::from_args(args).unwrap();
 
         assert!(options.show_inputs);
@@ -113,7 +113,7 @@ mod tests {
         assert!(options.show_icons);
         assert!(options.dont_group);
 
-        let args = vec!["-cs".to_string()];
+        let args = vec!["-ds".to_string()];
         let options = Options::from_args(args).unwrap();
 
         assert!(!options.show_inputs);
