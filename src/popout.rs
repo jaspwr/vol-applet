@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use gtk::gdk::{EventKey, SeatCapabilities};
 use gtk::glib::idle_add_once;
-use gtk::traits::{ContainerExt, GtkWindowExt, WidgetExt, ExpanderExt};
+use gtk::traits::{ContainerExt, ExpanderExt, GtkWindowExt, WidgetExt};
 use gtk::{Application, ApplicationWindow, Inhibit};
 
 use crate::audio::reload_outputs_in_popout;
@@ -147,11 +147,9 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout
-                .sliders
-                .get(&output_id)
-                .unwrap()
-                .set_volume_slider(volume);
+            if let Some(output) = popout.sliders.get(&output_id) {
+                output.set_volume_slider(volume);
+            }
         });
     }
 
@@ -159,11 +157,9 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout
-                .sliders
-                .get(&output_id)
-                .unwrap()
-                .set_volume_label(volume);
+            if let Some(output) = popout.sliders.get(&output_id) {
+                output.set_volume_label(volume);
+            }
         });
     }
 
@@ -171,7 +167,9 @@ impl Popout {
         idle_add_once(move || {
             let mut a = POPOUT.lock().unwrap();
             let popout = a.as_mut().unwrap();
-            popout.sliders.get(&output_id).unwrap().set_muted(muted);
+            if let Some(output) = popout.sliders.get(&output_id) {
+                output.set_muted(muted);
+            }
         });
     }
 
@@ -267,7 +265,11 @@ fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
     reposition_once_resized();
 }
 
-fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout, container: gtk::Box) {
+fn create_grouped(
+    outputs: Vec<shared_output_list::Output>,
+    popout: &mut Popout,
+    container: gtk::Box,
+) {
     let inputs = gtk::Expander::builder().label("Inputs").build();
 
     let inputs_container = gtk::Box::builder()
@@ -302,12 +304,8 @@ fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout,
                 let is_default = output.is_default();
                 popout.append_volume_slider(&container, output, is_default)
             }
-            VolumeType::Stream => {
-                popout.append_volume_slider(&streams_container, output, false)
-            }
-            VolumeType::Input => {
-                popout.append_volume_slider(&inputs_container, output, false)
-            }
+            VolumeType::Stream => popout.append_volume_slider(&streams_container, output, false),
+            VolumeType::Input => popout.append_volume_slider(&inputs_container, output, false),
         });
 
         popout.sliders.insert(id, slider);
