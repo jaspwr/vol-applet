@@ -2,7 +2,9 @@ use std::rc::Rc;
 
 use gtk::{
     glib,
-    traits::{ButtonExt, ContainerExt, GridExt, LabelExt, RangeExt, ScaleExt, WidgetExt},
+    traits::{
+        ButtonExt, ContainerExt, GridExt, IconThemeExt, LabelExt, RangeExt, ScaleExt, WidgetExt,
+    },
 };
 
 use crate::{audio::shared_output_list::VolumeType, options::OPTIONS};
@@ -20,6 +22,7 @@ impl VolumeSlider {
         container: &gtk::Box,
         label: Option<String>,
         type_: VolumeType,
+        icon_name: Option<String>,
         start_value: f32,
         muted: bool,
         on_change_vol: Rc<dyn Fn(f32) + 'static>,
@@ -79,7 +82,7 @@ impl VolumeSlider {
         if OPTIONS.show_icons {
             let outer_grid = gtk::Grid::new();
             outer_grid.set_column_spacing(10);
-            let icon = get_icon(&type_);
+            let icon = get_icon(&type_, icon_name);
             outer_grid.add(&icon);
             outer_grid.attach_next_to(&main_container, Some(&icon), gtk::PositionType::Right, 3, 3);
             container.add(&outer_grid);
@@ -143,18 +146,44 @@ fn substring_name(name: String) -> String {
     format!("{}…", &name.chars().take(MAX_NAME_LEN).collect::<String>())
 }
 
-fn get_icon(type_: &VolumeType) -> gtk::Image {
+pub trait MonadicOption<T> {
+    fn bind<F: FnOnce(T) -> Option<U>, U>(self, f: F) -> Option<U>;
+}
+
+impl<T> MonadicOption<T> for Option<T> {
+    fn bind<F: FnOnce(T) -> Option<U>, U>(self, f: F) -> Option<U> {
+        match self {
+            Some(x) => f(x),
+            None => None,
+        }
+    }
+}
+
+fn get_icon(type_: &VolumeType, icon_name: Option<String>) -> gtk::Image {
     match type_ {
         VolumeType::Sink => {
             gtk::Image::from_icon_name(Some("audio-card"), gtk::IconSize::LargeToolbar)
         }
-        VolumeType::Stream => gtk::Image::from_icon_name(
-            Some("application-x-executable"),
-            gtk::IconSize::LargeToolbar,
-        ),
         VolumeType::Input => {
             gtk::Image::from_icon_name(Some("audio-input-microphone"), gtk::IconSize::LargeToolbar)
         }
+        VolumeType::Stream => icon_name
+            .bind(|name| {
+                gtk::IconTheme::default()
+                    .bind(|theme| {
+                        Some(theme.load_icon(&name, 64, gtk::IconLookupFlags::FORCE_SIZE))
+                    })
+                    .bind(|icon| icon.ok())
+                    .bind(|icon| icon)
+                    .bind(|icon| icon.scale_simple(24, 24, gtk::gdk_pixbuf::InterpType::Bilinear))
+                    .bind(|pixbuf| Some(gtk::Image::from_pixbuf(Some(&pixbuf))))
+            })
+            .unwrap_or_else(|| {
+                gtk::Image::from_icon_name(
+                    Some("application-x-executable"),
+                    gtk::IconSize::LargeToolbar,
+                )
+            }),
     }
 }
 

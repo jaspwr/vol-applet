@@ -14,6 +14,7 @@ pub struct Output {
     pub muted: bool,
     pub id: String,
     pub pa_index: Option<u32>,
+    pub icon_name: Option<String>,
     pub type_: VolumeType,
 }
 
@@ -100,6 +101,7 @@ mod tests {
             muted: false,
             id: "1".to_string(),
             pa_index: None,
+            icon_name: None,
             type_: VolumeType::Sink,
         });
         list.push(Output {
@@ -108,6 +110,7 @@ mod tests {
             muted: true,
             id: "2".to_string(),
             pa_index: None,
+            icon_name: None,
             type_: VolumeType::Sink,
         });
         list.push(Output {
@@ -116,11 +119,12 @@ mod tests {
             muted: false,
             id: "3".to_string(),
             pa_index: None,
+            icon_name: None,
             type_: VolumeType::Input,
         });
         drop(list);
 
-        assert!(get_output_list().len() == 3);
+        assert_eq!(get_output_list().len(), 3);
 
         set_default_output("2".to_string());
 

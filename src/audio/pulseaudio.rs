@@ -151,32 +151,30 @@ impl Audio for Pulse {
 
             pa_cvolume_set(cvol_ptr, cvol.channels as u32, (volume * 1000.) as u32);
 
-            let op = match type_ {
-                VolumeType::Sink => pa_context_set_sink_volume_by_name(
-                    self.context,
-                    sink_id.as_ptr() as *const i8,
-                    cvol_ptr,
-                    None,
-                    std::ptr::null_mut(),
-                ),
-                VolumeType::Input => pa_context_set_source_volume_by_name(
-                    self.context,
-                    sink_id.as_ptr() as *const i8,
-                    cvol_ptr,
-                    None,
-                    std::ptr::null_mut(),
-                ),
-                VolumeType::Stream => {
-                    let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
+            let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
 
-                    pa_context_set_sink_input_volume(
-                        self.context,
-                        idx,
-                        cvol_ptr,
-                        None,
-                        std::ptr::null_mut(),
-                    )
-                }
+            let op = match type_ {
+                VolumeType::Sink => pa_context_set_sink_volume_by_index(
+                    self.context,
+                    idx,
+                    cvol_ptr,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Input => pa_context_set_source_volume_by_index(
+                    self.context,
+                    idx,
+                    cvol_ptr,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Stream => pa_context_set_sink_input_volume(
+                    self.context,
+                    idx,
+                    cvol_ptr,
+                    None,
+                    std::ptr::null_mut(),
+                ),
             };
 
             if op.is_null() {
@@ -193,32 +191,30 @@ impl Audio for Pulse {
         unsafe {
             pa_threaded_mainloop_lock(self.mainloop);
 
-            let op = match type_ {
-                VolumeType::Sink => pa_context_set_sink_mute_by_name(
-                    self.context,
-                    sink_id.as_ptr() as *const i8,
-                    muted as i32,
-                    None,
-                    std::ptr::null_mut(),
-                ),
-                VolumeType::Input => pa_context_set_source_mute_by_name(
-                    self.context,
-                    sink_id.as_ptr() as *const i8,
-                    muted as i32,
-                    None,
-                    std::ptr::null_mut(),
-                ),
-                VolumeType::Stream => {
-                    let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
+            let idx = shared_output_list::get_pa_index(&sink_id).unwrap();
 
-                    pa_context_set_sink_input_mute(
-                        self.context,
-                        idx,
-                        muted as i32,
-                        None,
-                        std::ptr::null_mut(),
-                    )
-                }
+            let op = match type_ {
+                VolumeType::Sink => pa_context_set_sink_mute_by_index(
+                    self.context,
+                    idx,
+                    muted as i32,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Input => pa_context_set_source_mute_by_index(
+                    self.context,
+                    idx,
+                    muted as i32,
+                    None,
+                    std::ptr::null_mut(),
+                ),
+                VolumeType::Stream => pa_context_set_sink_input_mute(
+                    self.context,
+                    idx,
+                    muted as i32,
+                    None,
+                    std::ptr::null_mut(),
+                ),
             };
 
             if op.is_null() {
@@ -296,6 +292,7 @@ extern "C" fn sink_info_callback(
             muted,
             output_id,
             pa_index,
+            None,
             VolumeType::Sink,
         );
         // Leak userdata again
@@ -390,6 +387,7 @@ extern "C" fn source_info_callback(
             muted,
             output_id,
             pa_index,
+            None,
             VolumeType::Input,
         );
         // Leak userdata again
@@ -445,6 +443,13 @@ extern "C" fn sink_input_info_callback(
 
         let pa_index = unsafe { (*sink_info_ptr).index };
 
+        let icon_name = unsafe {
+            get_icon_name(sink_info_ptr).map(|ico_name_ptr| {
+                let icon_name = std::ffi::CStr::from_ptr(ico_name_ptr);
+                icon_name.to_string_lossy().to_string()
+            })
+        };
+
         update_list(
             &userdata,
             name,
@@ -452,6 +457,7 @@ extern "C" fn sink_input_info_callback(
             muted,
             output_id,
             pa_index,
+            icon_name,
             VolumeType::Stream,
         );
         // Leak userdata again
@@ -462,6 +468,44 @@ extern "C" fn sink_input_info_callback(
     }
 }
 
+unsafe fn get_icon_name(sink_info_ptr: *mut pa_sink_input_info) -> Option<*const i8> {
+    static PA_PROP_MEDIA_ICON_NAME_: &[u8] = b"media.icon_name\0";
+    static PA_PROP_WINDOW_ICON_NAME_: &[u8] = b"window.icon_name\0";
+    static PA_PROP_APPLICATION_ICON_NAME_: &[u8] = b"application.icon_name\0";
+
+    let proplist_ptr = (*sink_info_ptr).proplist;
+
+    if let Some(value) = try_get_icon(proplist_ptr, PA_PROP_MEDIA_ICON_NAME_.as_ptr() as *const i8)
+    {
+        return Some(value);
+    }
+
+    if let Some(value) = try_get_icon(
+        proplist_ptr,
+        PA_PROP_WINDOW_ICON_NAME_.as_ptr() as *const i8,
+    ) {
+        return Some(value);
+    }
+
+    if let Some(value) = try_get_icon(
+        proplist_ptr,
+        PA_PROP_APPLICATION_ICON_NAME_.as_ptr() as *const i8,
+    ) {
+        return Some(value);
+    };
+
+    None
+}
+
+unsafe fn try_get_icon(proplist_ptr: *mut pa_proplist, key: *const c_char) -> Option<*const i8> {
+    let ico_name_ptr = pa_proplist_gets(proplist_ptr, key);
+
+    if !ico_name_ptr.is_null() {
+        return Some(ico_name_ptr);
+    }
+    None
+}
+
 fn update_list(
     userdata: &Arc<GetSinkListUserdata>,
     name: String,
@@ -469,6 +513,7 @@ fn update_list(
     muted: bool,
     output_id: String,
     pa_index: u32,
+    icon_name: Option<String>,
     type_: VolumeType,
 ) {
     let mut list = userdata.list.lock().unwrap();
@@ -478,6 +523,7 @@ fn update_list(
         muted,
         id: output_id,
         pa_index: Some(pa_index),
+        icon_name,
         type_,
     });
 }
@@ -504,12 +550,7 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
                 flags |= PA_SUBSCRIPTION_MASK_SOURCE;
             }
 
-            let op = pa_context_subscribe(
-                context,
-                flags,
-                None,
-                std::ptr::null_mut(),
-            );
+            let op = pa_context_subscribe(context, flags, None, std::ptr::null_mut());
             if op.is_null() {
                 Exception::Misc("PulseAudio context subscription failed".to_string())
                     .log_and_ignore();

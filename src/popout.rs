@@ -206,6 +206,7 @@ impl Popout {
             container,
             Some(output.name),
             output.type_,
+            output.icon_name,
             output.volume,
             output.muted,
             Rc::new(move |vol: f32| {
