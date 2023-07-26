@@ -62,9 +62,9 @@ impl Pulse {
 
             if op.is_null() {
                 Exception::Misc("Failed to get PA server info.".to_string()).log_and_ignore();
+            } else {
+                pa_operation_unref(op);
             }
-
-            pa_operation_unref(op);
         }
     }
 }
@@ -106,7 +106,9 @@ impl Audio for Pulse {
                 Arc::into_raw(userdata.clone()) as *mut c_void,
             );
 
-            pa_operation_unref(op);
+            if !op.is_null() {
+                pa_operation_unref(op);
+            }
 
             if OPTIONS.show_inputs {
                 let op = pa_context_get_source_info_list(
@@ -117,9 +119,9 @@ impl Audio for Pulse {
 
                 if op.is_null() {
                     Exception::Misc("Failed to get source list.".to_string()).log_and_ignore();
+                } else {
+                    pa_operation_unref(op);
                 }
-
-                pa_operation_unref(op);
             }
 
             if OPTIONS.show_streams {
@@ -131,9 +133,9 @@ impl Audio for Pulse {
 
                 if op.is_null() {
                     Exception::Misc("Failed to get sink input list.".to_string()).log_and_ignore();
+                } else {
+                    pa_operation_unref(op);
                 }
-
-                pa_operation_unref(op);
             }
         }
     }
@@ -179,9 +181,9 @@ impl Audio for Pulse {
 
             if op.is_null() {
                 Exception::Misc("Failed to get PA server info.".to_string()).log_and_ignore();
+            } else {
+                pa_operation_unref(op);
             }
-
-            pa_operation_unref(op);
 
             pa_threaded_mainloop_unlock(self.mainloop);
         }
@@ -221,9 +223,9 @@ impl Audio for Pulse {
 
             if op.is_null() {
                 Exception::Misc("Failed to set muted.".to_string()).log_and_ignore();
+            } else {
+                pa_operation_unref(op);
             }
-
-            pa_operation_unref(op);
 
             pa_threaded_mainloop_unlock(self.mainloop);
         }
@@ -231,8 +233,10 @@ impl Audio for Pulse {
 
     fn cleanup(&mut self) {
         unsafe {
-            pa_context_disconnect(self.context);
-            pa_context_unref(self.context);
+            if !self.context.is_null() {
+                pa_context_disconnect(self.context);
+                pa_context_unref(self.context);
+            }
 
             // pa_threaded_mainloop_stop(self.mainloop);
             // pa_threaded_mainloop_free(self.mainloop);
@@ -509,8 +513,9 @@ pub extern "C" fn context_state_callback(context: *mut pa_context, _: *mut c_voi
             if op.is_null() {
                 Exception::Misc("PulseAudio context subscription failed".to_string())
                     .log_and_ignore();
+            } else {
+                pa_operation_unref(op);
             }
-            pa_operation_unref(op);
 
             AUDIO.lock().unwrap().aud.get_outputs(Box::new(
                 |outputs: Vec<shared_output_list::Output>| {
