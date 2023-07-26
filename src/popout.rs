@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use gtk::gdk::{EventKey, SeatCapabilities};
 use gtk::glib::idle_add_once;
-use gtk::traits::{ContainerExt, GtkWindowExt, WidgetExt};
+use gtk::traits::{ContainerExt, GtkWindowExt, WidgetExt, ExpanderExt};
 use gtk::{Application, ApplicationWindow, Inhibit};
 
 use crate::audio::reload_outputs_in_popout;
@@ -262,6 +262,8 @@ fn add_outputs_from_list(popout: &mut Popout, container: gtk::Box) {
     } else {
         create_grouped(outputs, popout, container);
     }
+
+    reposition_once_resized();
 }
 
 fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout, container: gtk::Box) {
@@ -283,20 +285,27 @@ fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout,
 
     streams.add(&streams_container);
 
-    for output in outputs {
-        let is_default = output.is_default();
+    inputs.connect_expanded_notify(|_| {
+        reposition_once_resized();
+    });
 
+    streams.connect_expanded_notify(|_| {
+        reposition_once_resized();
+    });
+
+    for output in outputs {
         let id = output.id.clone();
 
         let slider = Box::new(match output.type_ {
             VolumeType::Sink => {
+                let is_default = output.is_default();
                 popout.append_volume_slider(&container, output, is_default)
             }
             VolumeType::Stream => {
-                popout.append_volume_slider(&streams_container, output, is_default)
+                popout.append_volume_slider(&streams_container, output, false)
             }
             VolumeType::Input => {
-                popout.append_volume_slider(&inputs_container, output, is_default)
+                popout.append_volume_slider(&inputs_container, output, false)
             }
         });
 
@@ -310,6 +319,17 @@ fn create_grouped(outputs: Vec<shared_output_list::Output>, popout: &mut Popout,
     if OPTIONS.show_streams {
         popout.container.add(&streams);
     }
+}
+
+fn reposition_once_resized() {
+    // HACK: This is a hack to fix the issue where the popout doesn't resize
+    //       for a little while.
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let mut a = POPOUT.lock().unwrap();
+        let popout = a.as_mut().unwrap();
+        popout.set_geomerty();
+    });
 }
 
 fn remove_child_widgets(popout: &mut Popout) {

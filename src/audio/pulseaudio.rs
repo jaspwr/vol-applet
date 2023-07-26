@@ -234,8 +234,8 @@ impl Audio for Pulse {
             pa_context_disconnect(self.context);
             pa_context_unref(self.context);
 
-            pa_threaded_mainloop_stop(self.mainloop);
-            pa_threaded_mainloop_free(self.mainloop);
+            // pa_threaded_mainloop_stop(self.mainloop);
+            // pa_threaded_mainloop_free(self.mainloop);
         }
     }
 }

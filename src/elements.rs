@@ -139,7 +139,8 @@ fn substring_name(name: String) -> String {
     if name.len() < MAX_NAME_LEN {
         return name;
     }
-    format!("{}…", &name[..MAX_NAME_LEN])
+
+    format!("{}…", &name.chars().take(MAX_NAME_LEN).collect::<String>())
 }
 
 fn get_icon(type_: &VolumeType) -> gtk::Image {
@@ -175,6 +176,13 @@ mod tests {
         assert_eq!(
             substring_name("Hellooooooooooooooooooooooooooooooo".to_string()),
             "Helloooooooooooooooooooooooooo…".to_string()
+        );
+
+        assert_eq!(
+            substring_name(
+                "【東方Darksynth/Synthwave】 Violet Delta - Race to the Crescent Moon".to_string()
+            ),
+            "【東方Darksynth/Synthwave】 Violet…".to_string()
         );
 
         assert_eq!(mute_button_icon(true), "audio-volume-muted");
